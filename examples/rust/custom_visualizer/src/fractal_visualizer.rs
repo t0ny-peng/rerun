@@ -13,7 +13,7 @@ pub struct FractalVisualizer {}
 
 impl IdentifiedViewSystem for FractalVisualizer {
     fn identifier() -> ViewSystemIdentifier {
-        "InstanceColor".into()
+        "Fractal".into()
     }
 }
 

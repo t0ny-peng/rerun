@@ -75,3 +75,18 @@ impl Fractal {
         self
     }
 }
+
+impl rerun::AsComponents for Fractal {
+    #[inline]
+    fn as_serialized_batches(&self) -> Vec<rerun::SerializedComponentBatch> {
+        use rerun::Archetype as _;
+        [
+            Some(Self::indicator()),
+            self.positions.clone(),
+            self.colors.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+}

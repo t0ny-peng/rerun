@@ -3,7 +3,7 @@
 use fractal_visualizer::FractalVisualizer;
 
 use rerun::external::{
-    re_crash_handler, re_grpc_server, re_log, re_memory,
+    glam, re_crash_handler, re_grpc_server, re_log, re_memory, re_smart_channel,
     re_types::{self, View as _},
     re_viewer, tokio,
 };
@@ -31,11 +31,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Listen for gRPC connections from Rerun's logging SDKs.
     // There are other ways of "feeding" the viewer though - all you need is a `re_smart_channel::Receiver`.
-    let (rx, _) = re_grpc_server::spawn_with_recv(
+    let (grpc_rx, _) = re_grpc_server::spawn_with_recv(
         "0.0.0.0:9876".parse()?,
         "75%".parse()?,
         re_grpc_server::shutdown::never(),
     );
+
+    // Provide a builtin recording with an example recording using the custom fractal archetype.
+    let builtin_recording_rx = builtin_recording()?;
 
     let startup_options = re_viewer::StartupOptions::default();
 
@@ -48,8 +51,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "You can connect through the SDK as per usual, for example to run: `cargo run -p minimal_options -- --connect` in another terminal instance."
     );
-
-    // TODO: add a builtin recording.
 
     re_viewer::run_native_app(
         main_thread_token,
@@ -64,7 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "Could not get a runtime handle from the current Tokio runtime or Wasm bindgen.",
                 ),
             );
-            app.add_log_receiver(rx);
+            app.add_log_receiver(grpc_rx);
+            app.add_log_receiver(builtin_recording_rx);
 
             // Register a custom visualizer for the builtin 3D view.
             app.view_class_registry()
@@ -79,4 +81,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     Ok(())
+}
+
+pub fn builtin_recording(
+) -> Result<re_smart_channel::Receiver<rerun::log::LogMsg>, rerun::RecordingStreamError> {
+    // TODO(andreas): Would be great if there was a log sink that's directly tied to a smartchannel
+    // so that this could run in the background.
+    let (rec, memory_sink) =
+        rerun::RecordingStreamBuilder::new("rerun_example_custom_visualizer").memory()?;
+
+    // Log an entity with two fractals.
+    rec.log_static(
+        "fractal",
+        &fractal_archetype::Fractal::new([[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]]).with_colors([
+            rerun::Color::from_rgb(255, 0, 0),
+            rerun::Color::from_rgb(0, 0, 255),
+        ]),
+    )?;
+
+    // Log a solid box to demonstrate interaction of the custom fractal with existing view contents.
+    rec.log_static(
+        "box",
+        &rerun::Boxes3D::from_half_sizes([[0.5, 0.5, 0.5]])
+            .with_fill_mode(rerun::FillMode::Solid)
+            .with_colors([rerun::Color::from_rgb(0, 255, 0)]),
+    )?;
+
+    // Move things around a little bit.
+    for i in 0..(std::f32::consts::TAU * 100.0) as i32 {
+        rec.set_duration_secs("time", i as f32 / 100.0);
+        rec.log(
+            "box",
+            &rerun::Transform3D::from_rotation(glam::Quat::from_rotation_x(i as f32 / 100.0)),
+        )?;
+        rec.log(
+            "fractal",
+            &rerun::Transform3D::from_rotation(glam::Quat::from_rotation_z(i as f32 / 100.0)),
+        )?;
+    }
+
+    // Forward the content of the memory recording to a smartchannel.
+    let (builtin_recording_tx, builtin_recording_rx) = re_smart_channel::smart_channel(
+        re_smart_channel::SmartMessageSource::Sdk,
+        re_smart_channel::SmartChannelSource::Sdk,
+    );
+    rec.flush_blocking();
+    for msg in memory_sink.take() {
+        builtin_recording_tx
+            .send(msg)
+            .expect("Failed to send message to builtin recording");
+    }
+
+    Ok(builtin_recording_rx)
 }

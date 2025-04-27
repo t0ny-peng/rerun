@@ -68,8 +68,8 @@ pub use context::{
 pub use debug_label::DebugLabel;
 pub use depth_offset::DepthOffset;
 pub use draw_phases::{
-    DrawPhase, OutlineConfig, OutlineMaskPreference, OutlineMaskProcessor, PickingLayerId,
-    PickingLayerInstanceId, PickingLayerObjectId, PickingLayerProcessor, ScreenshotProcessor,
+    DrawPhase, OutlineConfig, OutlineMaskPreference, PickingLayerId, PickingLayerInstanceId,
+    PickingLayerObjectId, PickingLayerProcessor, ScreenshotProcessor,
 };
 pub use global_bindings::GlobalBindings;
 pub use importer::{CpuMeshInstance, CpuModel, CpuModelMeshKey};

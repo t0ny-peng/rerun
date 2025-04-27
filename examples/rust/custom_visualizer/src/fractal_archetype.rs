@@ -13,7 +13,9 @@ impl rerun::Archetype for Fractal {
     fn indicator() -> rerun::SerializedComponentBatch {
         use rerun::ComponentBatch as _;
         #[allow(clippy::unwrap_used)]
-        Self::Indicator::default().serialized().unwrap()
+        Self::Indicator::default()
+            .serialized(Self::descriptor_indicator())
+            .unwrap()
     }
 
     fn name() -> rerun::ArchetypeName {
@@ -34,9 +36,9 @@ impl Fractal {
     #[inline]
     pub fn descriptor_positions() -> rerun::ComponentDescriptor {
         rerun::ComponentDescriptor {
-            archetype_name: Some("CustomFractal".into()),
-            component_name: rerun::Position3D::name(),
-            archetype_field_name: Some("positions".into()),
+            archetype: Some("CustomFractal".into()),
+            component: "CustomFractal:positions".into(),
+            component_type: Some(rerun::components::Position3D::name()),
         }
     }
 
@@ -44,9 +46,19 @@ impl Fractal {
     #[inline]
     pub fn descriptor_colors() -> rerun::ComponentDescriptor {
         rerun::ComponentDescriptor {
-            archetype_name: Some("CustomFractal".into()),
-            component_name: rerun::Color::name(),
-            archetype_field_name: Some("colors".into()),
+            archetype: Some("CustomFractal".into()),
+            component: "CustomFractal:colors".into(),
+            component_type: Some(rerun::components::Color::name()),
+        }
+    }
+
+    /// Returns the [`rerun::ComponentDescriptor`] for the associated indicator component.
+    #[inline]
+    pub fn descriptor_indicator() -> rerun::ComponentDescriptor {
+        rerun::ComponentDescriptor {
+            archetype: None,
+            component: "CustomFractalIndicator".into(),
+            component_type: None,
         }
     }
 

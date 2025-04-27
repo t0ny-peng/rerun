@@ -6,7 +6,7 @@ use rerun::external::{
     },
 };
 
-use crate::fractal_archetype::Fractal;
+use crate::{fractal_archetype::Fractal, fractal_renderer::FractalDrawData};
 
 #[derive(Default)]
 pub struct FractalVisualizer {}
@@ -24,11 +24,13 @@ impl VisualizerSystem for FractalVisualizer {
 
     fn execute(
         &mut self,
-        _ctx: &ViewContext<'_>,
+        ctx: &ViewContext<'_>,
         _query: &ViewQuery<'_>,
         _context_systems: &ViewContextCollection,
     ) -> Result<Vec<re_renderer::QueueableDrawData>, ViewSystemExecutionError> {
-        Ok(Vec::new())
+        let draw_data = FractalDrawData::new(ctx.render_ctx());
+
+        Ok(vec![draw_data.into()])
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

@@ -9,6 +9,7 @@ use rerun::external::{
 };
 
 mod fractal_archetype;
+mod fractal_renderer;
 mod fractal_visualizer;
 
 // By using `re_memory::AccountingAllocator` Rerun can keep track of exactly how much memory it is using,
@@ -61,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &app_env,
                 startup_options,
                 cc,
+                None,
                 re_viewer::AsyncRuntimeHandle::from_current_tokio_runtime_or_wasmbindgen().expect(
                     "Could not get a runtime handle from the current Tokio runtime or Wasm bindgen.",
                 ),

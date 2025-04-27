@@ -54,13 +54,7 @@ impl re_renderer::renderer::Renderer for FractalRenderer {
                     re_renderer::ViewBuilder::MAIN_TARGET_COLOR_FORMAT.into()
                 )],
                 primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: re_renderer::ViewBuilder::MAIN_TARGET_DEPTH_FORMAT,
-                    depth_compare: wgpu::CompareFunction::Always,
-                    depth_write_enabled: true, // writes some depth for testing
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
+                depth_stencil: re_renderer::ViewBuilder::MAIN_TARGET_DEFAULT_DEPTH_STATE,
                 multisample: re_renderer::ViewBuilder::main_target_default_msaa_state(
                     ctx.render_config(),
                     false,

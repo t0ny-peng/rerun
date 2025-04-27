@@ -1,5 +1,5 @@
 use rerun::external::{
-    re_renderer,
+    re_renderer, re_types, re_view_spatial,
     re_viewer_context::{
         self, IdentifiedViewSystem, ViewContext, ViewContextCollection, ViewQuery,
         ViewSystemExecutionError, ViewSystemIdentifier, VisualizerQueryInfo, VisualizerSystem,
@@ -25,10 +25,21 @@ impl VisualizerSystem for FractalVisualizer {
     fn execute(
         &mut self,
         ctx: &ViewContext<'_>,
-        _query: &ViewQuery<'_>,
-        _context_systems: &ViewContextCollection,
+        query: &ViewQuery<'_>,
+        context_systems: &ViewContextCollection,
     ) -> Result<Vec<re_renderer::QueueableDrawData>, ViewSystemExecutionError> {
-        let draw_data = FractalDrawData::new(ctx.render_ctx());
+        let transforms = context_systems.get::<re_view_spatial::TransformTreeContext>()?;
+
+        let mut draw_data = FractalDrawData::new(ctx.render_ctx());
+
+        for data_result in query.iter_visible_data_results(Self::identifier()) {
+            let ent_path = &data_result.entity_path;
+            let Some(transform_info) = transforms.transform_info_for_entity(ent_path.hash()) else {
+                continue; // No valid transform info for this entity.
+            };
+
+            // todo...
+        }
 
         Ok(vec![draw_data.into()])
     }
@@ -44,5 +55,4 @@ impl VisualizerSystem for FractalVisualizer {
 
 // Implements a `ComponentFallbackProvider` trait for the `FractalVisualizer`.
 // It is left empty here but could be used to provides fallback values for optional components in case they're missing.
-use rerun::external::re_types;
 re_viewer_context::impl_component_fallback_provider!(FractalVisualizer => []);

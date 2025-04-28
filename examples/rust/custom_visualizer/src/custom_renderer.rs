@@ -32,7 +32,7 @@ mod gpu_data {
 pub struct CustomDrawData {
     /// Bindgroup per instance.
     ///
-    /// It is much more efficient to batch evertyhing in a single draw call by using instancing
+    /// It is much more efficient to batch everything in a single draw call by using instancing
     /// or other more dynamic buffer access. However, for simplicity, we draw each instance individually
     /// with a separate bind group here.
     bind_groups: Vec<re_renderer::GpuBindGroup>,

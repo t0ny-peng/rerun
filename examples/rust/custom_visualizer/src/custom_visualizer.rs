@@ -1,9 +1,12 @@
-use rerun::external::{
-    re_renderer, re_types, re_view_spatial,
-    re_viewer_context::{
-        self, IdentifiedViewSystem, ViewContext, ViewContextCollection, ViewQuery,
-        ViewSystemExecutionError, ViewSystemIdentifier, VisualizerQueryInfo, VisualizerSystem,
+use rerun::{
+    external::{
+        re_renderer, re_types, re_view_spatial,
+        re_viewer_context::{
+            self, IdentifiedViewSystem, ViewContext, ViewContextCollection, ViewQuery,
+            ViewSystemExecutionError, ViewSystemIdentifier, VisualizerQueryInfo, VisualizerSystem,
+        },
     },
+    Archetype,
 };
 
 use crate::{custom_archetype::Custom, custom_renderer::CustomDrawData};
@@ -29,8 +32,9 @@ impl VisualizerSystem for CustomVisualizer {
         context_systems: &ViewContextCollection,
     ) -> Result<Vec<re_renderer::QueueableDrawData>, ViewSystemExecutionError> {
         let transforms = context_systems.get::<re_view_spatial::TransformTreeContext>()?;
+        let render_ctx = ctx.render_ctx();
 
-        let mut draw_data = CustomDrawData::new(ctx.render_ctx());
+        let mut draw_data = CustomDrawData::new(render_ctx);
 
         for data_result in query.iter_visible_data_results(Self::identifier()) {
             let ent_path = &data_result.entity_path;
@@ -38,7 +42,11 @@ impl VisualizerSystem for CustomVisualizer {
                 continue; // No valid transform info for this entity.
             };
 
-            // todo...
+            // TODO: handle component instances etc.
+
+            for transform in transform_info.reference_from_instances(Custom::name()) {
+                draw_data.add(render_ctx, *transform, &ent_path.to_string());
+            }
         }
 
         Ok(vec![draw_data.into()])

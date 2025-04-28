@@ -18,5 +18,8 @@ rerun = { path = "../../../crates/top/rerun", default-features = false, features
   "run",
 ] }
 
+# Can't rely on export from `rerun` crate since proc macros can't be re-exported.
+bytemuck = "1"
+
 # mimalloc is a much faster allocator:
 mimalloc = "0.1.43"

@@ -2165,6 +2165,7 @@ dependencies = [
 name = "custom_visualizer"
 version = "0.24.0-alpha.3+dev"
 dependencies = [
+ "bytemuck",
  "mimalloc",
  "rerun",
 ]

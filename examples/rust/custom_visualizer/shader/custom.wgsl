@@ -1,6 +1,12 @@
 #import <types.wgsl>
 #import <global_bindings.wgsl>
 
+struct UniformBuffer {
+    world_from_obj: mat4x4f,
+};
+@group(1) @binding(0)
+var<uniform> ubo: UniformBuffer;
+
 struct VertexOut {
     @location(0) color: vec4f,
     @builtin(position) position: vec4f,
@@ -22,7 +28,11 @@ var<private> v_colors: array<vec4f, 3> = array<vec4f, 3>(
 fn vs_main(@builtin(vertex_index) v_idx: u32) -> VertexOut {
     var out: VertexOut;
 
-    out.position = frame.projection_from_world * vec4f(v_positions[v_idx] * 5.0, 0.0, 1.0);
+    let position_obj =  vec4f(v_positions[v_idx], 0.0, 1.0);
+    let position_world = ubo.world_from_obj * position_obj;
+    let position_clip = frame.projection_from_world * position_world;
+
+    out.position = position_clip;
     out.color = v_colors[v_idx];
 
     return out;

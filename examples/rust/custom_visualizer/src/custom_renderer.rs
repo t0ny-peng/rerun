@@ -4,40 +4,40 @@ use rerun::external::re_renderer::{
     DrawPhase,
 };
 
-/// Implements a simple custom [`re_renderer::renderer::Renderer`] for drawing some shader defined 3D fractal.
-pub struct FractalRenderer {
+/// Implements a simple custom [`re_renderer::renderer::Renderer`] for drawing some shader defined 3D ??TODO??.
+pub struct CustomRenderer {
     render_pipeline: re_renderer::GpuRenderPipelineHandle,
 }
 
-/// GPU draw data for drawing fractal instances using [`FractalRenderer`].
+/// GPU draw data for drawing ??TODO?? instances using [`CustomRenderer`].
 #[derive(Clone)]
-pub struct FractalDrawData;
+pub struct CustomDrawData;
 
-impl re_renderer::renderer::DrawData for FractalDrawData {
-    type Renderer = FractalRenderer;
+impl re_renderer::renderer::DrawData for CustomDrawData {
+    type Renderer = CustomRenderer;
 }
 
-impl FractalDrawData {
+impl CustomDrawData {
     pub fn new(ctx: &re_renderer::RenderContext) -> Self {
-        let _ = ctx.renderer::<FractalRenderer>(); // TODO(andreas): This line ensures that the renderer exists. Currently this needs to be done ahead of time, but should be fully automatic!
+        let _ = ctx.renderer::<CustomRenderer>(); // TODO(andreas): This line ensures that the renderer exists. Currently this needs to be done ahead of time, but should be fully automatic!
         Self {}
     }
 }
 
-impl re_renderer::renderer::Renderer for FractalRenderer {
-    type RendererDrawData = FractalDrawData;
+impl re_renderer::renderer::Renderer for CustomRenderer {
+    type RendererDrawData = CustomDrawData;
 
     fn create_renderer(ctx: &re_renderer::RenderContext) -> Self {
         let shader_modules = &ctx.gpu_resources.shader_modules;
         let shader_module = shader_modules.get_or_create(
             ctx,
-            &re_renderer::include_shader_module!("../shader/fractal.wgsl"),
+            &re_renderer::include_shader_module!("../shader/custom.wgsl"),
         );
 
         let render_pipeline = ctx.gpu_resources.render_pipelines.get_or_create(
             ctx,
             &re_renderer::RenderPipelineDesc {
-                label: "FractalRenderer::main".into(),
+                label: "CustomRenderer::main".into(),
                 pipeline_layout: ctx.gpu_resources.pipeline_layouts.get_or_create(
                     ctx,
                     &re_renderer::PipelineLayoutDesc {
@@ -70,7 +70,7 @@ impl re_renderer::renderer::Renderer for FractalRenderer {
         render_pipelines: &re_renderer::GpuRenderPipelinePoolAccessor<'_>,
         _phase: re_renderer::DrawPhase,
         pass: &mut wgpu::RenderPass<'_>,
-        _draw_data: &FractalDrawData,
+        _draw_data: &CustomDrawData,
     ) -> Result<(), re_renderer::renderer::DrawError> {
         let pipeline = render_pipelines.get(self.render_pipeline)?;
         pass.set_pipeline(pipeline);

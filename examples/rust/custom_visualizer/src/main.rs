@@ -1,16 +1,16 @@
 //! This example shows how to add custom Views to the Rerun Viewer.
 
-use fractal_visualizer::FractalVisualizer;
-
 use rerun::external::{
     glam, re_crash_handler, re_grpc_server, re_log, re_memory, re_smart_channel,
     re_types::{self, View as _},
     re_viewer, tokio,
 };
 
-mod fractal_archetype;
-mod fractal_renderer;
-mod fractal_visualizer;
+mod custom_archetype;
+mod custom_renderer;
+mod custom_visualizer;
+
+use custom_visualizer::CustomVisualizer;
 
 // By using `re_memory::AccountingAllocator` Rerun can keep track of exactly how much memory it is using,
 // and prune the data store when it goes above a certain limit.
@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         re_grpc_server::shutdown::never(),
     );
 
-    // Provide a builtin recording with an example recording using the custom fractal archetype.
+    // Provide a builtin recording with an example recording using the custom archetype.
     let builtin_recording_rx = builtin_recording()?;
 
     let startup_options = re_viewer::StartupOptions::default();
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Register a custom visualizer for the builtin 3D view.
             app.view_class_registry()
-                .register_visualizer::<FractalVisualizer>(
+                .register_visualizer::<CustomVisualizer>(
                     re_types::blueprint::views::Spatial3DView::identifier(),
                 )
                 .unwrap();
@@ -92,16 +92,16 @@ pub fn builtin_recording(
     let (rec, memory_sink) =
         rerun::RecordingStreamBuilder::new("rerun_example_custom_visualizer").memory()?;
 
-    // Log an entity with two fractals.
+    // Log an entity with two custom ???TODO??.
     rec.log_static(
-        "fractal",
-        &fractal_archetype::Fractal::new([[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]]).with_colors([
+        "custom",
+        &custom_archetype::Custom::new([[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]]).with_colors([
             rerun::Color::from_rgb(255, 0, 0),
             rerun::Color::from_rgb(0, 0, 255),
         ]),
     )?;
 
-    // Log a solid box to demonstrate interaction of the custom fractal with existing view contents.
+    // Log a solid box to demonstrate interaction of the custom ???TODO?? with existing view contents.
     rec.log_static(
         "box",
         &rerun::Boxes3D::from_half_sizes([[0.5, 0.5, 0.5]])
@@ -117,7 +117,7 @@ pub fn builtin_recording(
             &rerun::Transform3D::from_rotation(glam::Quat::from_rotation_x(i as f32 / 100.0)),
         )?;
         rec.log(
-            "fractal",
+            "custom",
             &rerun::Transform3D::from_rotation(glam::Quat::from_rotation_z(i as f32 / 100.0)),
         )?;
     }

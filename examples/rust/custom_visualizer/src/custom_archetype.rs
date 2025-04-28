@@ -1,13 +1,13 @@
 use rerun::{external::re_types::try_serialize_field, Component};
 
-/// Custom archetype for drawing a simple raymarched fractal in the 3D view.
+/// Custom archetype for drawing ??TODO?? in the 3D view.
 #[derive(Default)]
-pub struct Fractal {
+pub struct Custom {
     pub positions: Option<rerun::SerializedComponentBatch>,
     pub colors: Option<rerun::SerializedComponentBatch>,
 }
 
-impl rerun::Archetype for Fractal {
+impl rerun::Archetype for Custom {
     type Indicator = rerun::GenericIndicatorComponent<Self>;
 
     fn indicator() -> rerun::SerializedComponentBatch {
@@ -19,11 +19,11 @@ impl rerun::Archetype for Fractal {
     }
 
     fn name() -> rerun::ArchetypeName {
-        "CustomFractal".into()
+        "Custom".into()
     }
 
     fn display_name() -> &'static str {
-        "Fractal"
+        "Custom"
     }
 
     fn required_components() -> ::std::borrow::Cow<'static, [rerun::ComponentDescriptor]> {
@@ -31,13 +31,13 @@ impl rerun::Archetype for Fractal {
     }
 }
 
-impl Fractal {
+impl Custom {
     /// Returns the [`rerun::ComponentDescriptor`] for [`Self::positions`].
     #[inline]
     pub fn descriptor_positions() -> rerun::ComponentDescriptor {
         rerun::ComponentDescriptor {
-            archetype: Some("CustomFractal".into()),
-            component: "CustomFractal:positions".into(),
+            archetype: Some("Custom".into()),
+            component: "Custom:positions".into(),
             component_type: Some(rerun::components::Position3D::name()),
         }
     }
@@ -46,8 +46,8 @@ impl Fractal {
     #[inline]
     pub fn descriptor_colors() -> rerun::ComponentDescriptor {
         rerun::ComponentDescriptor {
-            archetype: Some("CustomFractal".into()),
-            component: "CustomFractal:colors".into(),
+            archetype: Some("Custom".into()),
+            component: "Custom:colors".into(),
             component_type: Some(rerun::components::Color::name()),
         }
     }
@@ -57,7 +57,7 @@ impl Fractal {
     pub fn descriptor_indicator() -> rerun::ComponentDescriptor {
         rerun::ComponentDescriptor {
             archetype: None,
-            component: "CustomFractalIndicator".into(),
+            component: "CustomIndicator".into(),
             component_type: None,
         }
     }
@@ -88,7 +88,7 @@ impl Fractal {
     }
 }
 
-impl rerun::AsComponents for Fractal {
+impl rerun::AsComponents for Custom {
     #[inline]
     fn as_serialized_batches(&self) -> Vec<rerun::SerializedComponentBatch> {
         use rerun::Archetype as _;

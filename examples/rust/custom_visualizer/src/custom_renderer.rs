@@ -26,12 +26,14 @@ mod gpu_data {
     pub struct UniformBuffer {
         pub world_from_obj: wgpu_buffer_types::Mat4,
 
+        pub color: re_renderer::Rgba,
+
         pub picking_layer_object_id: re_renderer::PickingLayerObjectId,
         pub picking_instance_id: re_renderer::PickingLayerInstanceId,
 
         pub outline_mask: wgpu_buffer_types::UVec2RowPadded,
 
-        pub end_padding: [wgpu_buffer_types::PaddingRow; 16 - 6],
+        pub end_padding: [wgpu_buffer_types::PaddingRow; 16 - 7],
     }
 }
 /// GPU draw data for drawing ??TODO?? instances using [`CustomRenderer`].
@@ -72,6 +74,7 @@ impl CustomDrawData {
         ctx: &re_renderer::RenderContext,
         label: &str,
         world_from_obj: glam::Affine3A,
+        color: re_renderer::Rgba,
         picking_layer_object_id: re_renderer::PickingLayerObjectId,
         picking_instance_id: re_renderer::PickingLayerInstanceId,
         outline_mask: re_renderer::OutlineMaskPreference,
@@ -90,6 +93,7 @@ impl CustomDrawData {
                     label.into(),
                     gpu_data::UniformBuffer {
                         world_from_obj: world_from_obj.into(),
+                        color,
                         picking_layer_object_id,
                         picking_instance_id,
                         outline_mask: outline_mask.0.unwrap_or_default().into(),

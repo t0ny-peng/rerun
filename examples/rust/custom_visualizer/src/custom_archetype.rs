@@ -29,6 +29,10 @@ impl rerun::Archetype for Custom {
     fn required_components() -> ::std::borrow::Cow<'static, [rerun::ComponentDescriptor]> {
         vec![Self::descriptor_positions()].into()
     }
+
+    fn optional_components() -> std::borrow::Cow<'static, [rerun::ComponentDescriptor]> {
+        vec![Self::descriptor_colors()].into()
+    }
 }
 
 impl Custom {

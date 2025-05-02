@@ -4,6 +4,8 @@
 struct UniformBuffer {
     world_from_obj: mat4x4f,
 
+    color: vec4f,
+
     picking_layer_object_id: vec2u,
     picking_instance_id: vec2u,
 
@@ -38,7 +40,7 @@ fn vs_main(@builtin(vertex_index) v_idx: u32) -> VertexOut {
     let position_clip = frame.projection_from_world * position_world;
 
     out.position = position_clip;
-    out.color = v_colors[v_idx];
+    out.color = v_colors[v_idx] * ubo.color;
 
     return out;
 }
@@ -47,7 +49,6 @@ fn vs_main(@builtin(vertex_index) v_idx: u32) -> VertexOut {
 fn fs_main(in: VertexOut) -> @location(0) vec4f {
     return in.color;
 }
-
 
 @fragment
 fn fs_main_picking_layer(in: VertexOut) -> @location(0) vec4u {

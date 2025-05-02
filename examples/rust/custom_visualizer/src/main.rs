@@ -95,10 +95,12 @@ pub fn builtin_recording(
     // Log an entity with two custom ???TODO??.
     rec.log_static(
         "custom",
-        &custom_archetype::Custom::new([[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]]).with_colors([
-            rerun::Color::from_rgb(255, 0, 0),
-            rerun::Color::from_rgb(0, 0, 255),
-        ]),
+        // &custom_archetype::Custom::new([[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]]).with_colors([
+        //     rerun::Color::from_rgb(255, 0, 0),
+        //     rerun::Color::from_rgb(0, 0, 255),
+        // ]),
+        &custom_archetype::Custom::new([[0.0, 0.0, 0.0]])
+            .with_colors([rerun::Color::from_rgb(255, 0, 0)]),
     )?;
 
     // Log a solid box to demonstrate interaction of the custom ???TODO?? with existing view contents.

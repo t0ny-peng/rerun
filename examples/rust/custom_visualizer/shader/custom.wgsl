@@ -3,6 +3,11 @@
 
 struct UniformBuffer {
     world_from_obj: mat4x4f,
+
+    picking_layer_object_id: vec2u,
+    picking_instance_id: vec2u,
+
+    outline_mask: vec2u,
 };
 @group(1) @binding(0)
 var<uniform> ubo: UniformBuffer;
@@ -41,4 +46,15 @@ fn vs_main(@builtin(vertex_index) v_idx: u32) -> VertexOut {
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4f {
     return in.color;
+}
+
+
+@fragment
+fn fs_main_picking_layer(in: VertexOut) -> @location(0) vec4u {
+    return vec4u(ubo.picking_layer_object_id, ubo.picking_instance_id);
+}
+
+@fragment
+fn fs_main_outline_mask(in: VertexOut) -> @location(0) vec2u {
+    return ubo.outline_mask;
 }

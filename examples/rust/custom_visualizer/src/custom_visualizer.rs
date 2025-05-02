@@ -42,10 +42,27 @@ impl VisualizerSystem for CustomVisualizer {
                 continue; // No valid transform info for this entity.
             };
 
-            // TODO: handle component instances etc.
+            let picking_layer_object_id = re_renderer::PickingLayerObjectId(ent_path.hash64());
+            let entity_outline_mask = query.highlights.entity_outline_mask(ent_path.hash());
 
-            for transform in transform_info.reference_from_instances(Custom::name()) {
-                draw_data.add(render_ctx, *transform, &ent_path.to_string());
+            // TODO: handle component instances etc.
+            for (instance, transform) in transform_info
+                .reference_from_instances(Custom::name())
+                .iter()
+                .enumerate()
+            {
+                let instance = instance as u64;
+                let picking_layer_instance_id = re_renderer::PickingLayerInstanceId(instance);
+                let outline_mask = entity_outline_mask.index_outline_mask(instance.into());
+
+                draw_data.add(
+                    render_ctx,
+                    &ent_path.to_string(),
+                    *transform,
+                    picking_layer_object_id,
+                    picking_layer_instance_id,
+                    outline_mask,
+                );
             }
         }
 

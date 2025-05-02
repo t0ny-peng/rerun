@@ -11,18 +11,27 @@ use rerun::external::{
 /// Implements a simple custom [`re_renderer::renderer::Renderer`] for drawing some shader defined 3D ??TODO??.
 pub struct CustomRenderer {
     bind_group_layout: re_renderer::GpuBindGroupLayoutHandle,
-    render_pipeline: re_renderer::GpuRenderPipelineHandle,
+
+    render_pipeline_color: re_renderer::GpuRenderPipelineHandle,
+    render_pipeline_picking_layer: re_renderer::GpuRenderPipelineHandle,
+    render_pipeline_outline_mask: re_renderer::GpuRenderPipelineHandle,
 }
 
 mod gpu_data {
-    use rerun::external::re_renderer::wgpu_buffer_types;
+    use rerun::external::re_renderer::{self, wgpu_buffer_types};
 
     /// Keep in sync with [`UniformBuffer`] in `custom.wgsl`
     #[repr(C)]
     #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
     pub struct UniformBuffer {
         pub world_from_obj: wgpu_buffer_types::Mat4,
-        pub end_padding: [wgpu_buffer_types::PaddingRow; 16 - 4],
+
+        pub picking_layer_object_id: re_renderer::PickingLayerObjectId,
+        pub picking_instance_id: re_renderer::PickingLayerInstanceId,
+
+        pub outline_mask: wgpu_buffer_types::UVec2RowPadded,
+
+        pub end_padding: [wgpu_buffer_types::PaddingRow; 16 - 6],
     }
 }
 /// GPU draw data for drawing ??TODO?? instances using [`CustomRenderer`].
@@ -30,12 +39,19 @@ mod gpu_data {
 /// Note that a single draw data is used for many instances of the same drawable.
 #[derive(Clone)]
 pub struct CustomDrawData {
+    instances: Vec<Instance>,
+}
+
+#[derive(Clone)]
+struct Instance {
     /// Bindgroup per instance.
     ///
     /// It is much more efficient to batch everything in a single draw call by using instancing
     /// or other more dynamic buffer access. However, for simplicity, we draw each instance individually
     /// with a separate bind group here.
-    bind_groups: Vec<re_renderer::GpuBindGroup>,
+    bind_group: re_renderer::GpuBindGroup,
+
+    has_outline: bool,
 }
 
 impl re_renderer::renderer::DrawData for CustomDrawData {
@@ -46,7 +62,7 @@ impl CustomDrawData {
     pub fn new(ctx: &re_renderer::RenderContext) -> Self {
         let _ = ctx.renderer::<CustomRenderer>(); // TODO(andreas): This line ensures that the renderer exists. Currently this needs to be done ahead of time, but should be fully automatic!
         Self {
-            bind_groups: Vec::new(),
+            instances: Vec::new(),
         }
     }
 
@@ -54,8 +70,11 @@ impl CustomDrawData {
     pub fn add(
         &mut self,
         ctx: &re_renderer::RenderContext,
-        world_from_obj: glam::Affine3A,
         label: &str,
+        world_from_obj: glam::Affine3A,
+        picking_layer_object_id: re_renderer::PickingLayerObjectId,
+        picking_instance_id: re_renderer::PickingLayerInstanceId,
+        outline_mask: re_renderer::OutlineMaskPreference,
     ) {
         let renderer = ctx.renderer::<CustomRenderer>();
 
@@ -71,13 +90,19 @@ impl CustomDrawData {
                     label.into(),
                     gpu_data::UniformBuffer {
                         world_from_obj: world_from_obj.into(),
+                        picking_layer_object_id,
+                        picking_instance_id,
+                        outline_mask: outline_mask.0.unwrap_or_default().into(),
                         end_padding: Default::default(),
                     },
                 )],
                 layout: renderer.bind_group_layout,
             },
         );
-        self.bind_groups.push(bind_group);
+        self.instances.push(Instance {
+            bind_group,
+            has_outline: outline_mask.is_some(),
+        });
     }
 }
 
@@ -97,7 +122,7 @@ impl re_renderer::renderer::Renderer for CustomRenderer {
                 label: "CustomRenderer::bind_group_layout".into(),
                 entries: vec![wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -118,46 +143,85 @@ impl re_renderer::renderer::Renderer for CustomRenderer {
             },
         );
 
-        let render_pipeline = ctx.gpu_resources.render_pipelines.get_or_create(
+        let render_pipeline_desc_color = re_renderer::RenderPipelineDesc {
+            label: "CustomRenderer::color".into(),
+            pipeline_layout,
+            vertex_entrypoint: "vs_main".into(),
+            vertex_handle: shader_module,
+            fragment_entrypoint: "fs_main".into(),
+            fragment_handle: shader_module,
+            vertex_buffers: smallvec![],
+            render_targets: smallvec![Some(
+                re_renderer::ViewBuilder::MAIN_TARGET_COLOR_FORMAT.into()
+            )],
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: re_renderer::ViewBuilder::MAIN_TARGET_DEFAULT_DEPTH_STATE,
+            multisample: re_renderer::ViewBuilder::main_target_default_msaa_state(
+                ctx.render_config(),
+                false,
+            ),
+        };
+
+        let render_pipelines = &ctx.gpu_resources.render_pipelines;
+        let render_pipeline_color =
+            render_pipelines.get_or_create(ctx, &render_pipeline_desc_color);
+        let render_pipeline_picking_layer = render_pipelines.get_or_create(
             ctx,
             &re_renderer::RenderPipelineDesc {
-                label: "CustomRenderer::main".into(),
-                pipeline_layout,
-                vertex_entrypoint: "vs_main".into(),
-                vertex_handle: shader_module,
-                fragment_entrypoint: "fs_main".into(),
-                fragment_handle: shader_module,
-                vertex_buffers: smallvec![],
+                label: "CustomRenderer::picking_layer".into(),
+                fragment_entrypoint: "fs_main_picking_layer".into(),
                 render_targets: smallvec![Some(
-                    re_renderer::ViewBuilder::MAIN_TARGET_COLOR_FORMAT.into()
+                    re_renderer::PickingLayerProcessor::PICKING_LAYER_FORMAT.into()
                 )],
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: re_renderer::ViewBuilder::MAIN_TARGET_DEFAULT_DEPTH_STATE,
-                multisample: re_renderer::ViewBuilder::main_target_default_msaa_state(
-                    ctx.render_config(),
-                    false,
-                ),
+                depth_stencil: re_renderer::PickingLayerProcessor::PICKING_LAYER_DEPTH_STATE,
+                multisample: re_renderer::PickingLayerProcessor::PICKING_LAYER_MSAA_STATE,
+                ..render_pipeline_desc_color.clone()
+            },
+        );
+        let render_pipeline_outline_mask = render_pipelines.get_or_create(
+            ctx,
+            &re_renderer::RenderPipelineDesc {
+                label: "CustomRenderer::outline_mask".into(),
+                fragment_entrypoint: "fs_main_outline_mask".into(),
+                render_targets: smallvec![Some(
+                    re_renderer::OutlineMaskProcessor::MASK_FORMAT.into()
+                )],
+                depth_stencil: re_renderer::OutlineMaskProcessor::MASK_DEPTH_STATE,
+                ..render_pipeline_desc_color
             },
         );
 
         Self {
             bind_group_layout,
-            render_pipeline,
+            render_pipeline_color,
+            render_pipeline_outline_mask,
+            render_pipeline_picking_layer,
         }
     }
 
     fn draw(
         &self,
         render_pipelines: &re_renderer::GpuRenderPipelinePoolAccessor<'_>,
-        _phase: re_renderer::DrawPhase,
+        phase: re_renderer::DrawPhase,
         pass: &mut wgpu::RenderPass<'_>,
-        _draw_data: &CustomDrawData,
+        draw_data: &CustomDrawData,
     ) -> Result<(), re_renderer::renderer::DrawError> {
-        let pipeline = render_pipelines.get(self.render_pipeline)?;
+        let pipeline_handle = match phase {
+            re_renderer::DrawPhase::Opaque => self.render_pipeline_color,
+            re_renderer::DrawPhase::OutlineMask => self.render_pipeline_outline_mask,
+            re_renderer::DrawPhase::PickingLayer => self.render_pipeline_picking_layer,
+            _ => unreachable!("We were called on a phase we weren't subscribed to: {phase:?}"),
+        };
+
+        let pipeline = render_pipelines.get(pipeline_handle)?;
         pass.set_pipeline(pipeline);
 
-        for bind_group in &_draw_data.bind_groups {
-            pass.set_bind_group(1, bind_group, &[]);
+        for instance in &draw_data.instances {
+            if phase == re_renderer::DrawPhase::OutlineMask && !instance.has_outline {
+                continue;
+            }
+
+            pass.set_bind_group(1, &instance.bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
 
@@ -167,10 +231,8 @@ impl re_renderer::renderer::Renderer for CustomRenderer {
     fn participated_phases() -> &'static [re_renderer::DrawPhase] {
         &[
             re_renderer::DrawPhase::Opaque,
-            // TODO(andreas): Demonstrate how to render the outline layer.
-            //re_renderer::DrawPhase::OutlineMask,
-            // TODO(andreas): Demonstrate how to render the picking layer.
-            //re_renderer::DrawPhase::PickingLayer,
+            re_renderer::DrawPhase::OutlineMask,
+            re_renderer::DrawPhase::PickingLayer,
         ]
     }
 }

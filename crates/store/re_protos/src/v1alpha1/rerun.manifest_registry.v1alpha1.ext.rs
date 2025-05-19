@@ -381,16 +381,12 @@ impl GetDatasetSchemaResponse {
 
 impl RegisterWithDatasetResponse {
     pub const PARTITION_ID: &str = "rerun_partition_id";
-    pub const PARTITION_TYPE: &str = "rerun_partition_type";
-    pub const STORAGE_URL: &str = "rerun_storage_url";
     pub const TASK_ID: &str = "rerun_task_id";
 
     /// The Arrow schema of the dataframe in [`Self::data`].
     pub fn schema() -> Schema {
         Schema::new(vec![
             Field::new(Self::PARTITION_ID, DataType::Utf8, false),
-            Field::new(Self::PARTITION_TYPE, DataType::Utf8, false),
-            Field::new(Self::STORAGE_URL, DataType::Utf8, false),
             Field::new(Self::TASK_ID, DataType::Utf8, false),
         ])
     }
@@ -469,7 +465,7 @@ impl TryFrom<crate::manifest_registry::v1alpha1::DataSource> for DataSource {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum PartitionType {
     Rrd,
 }

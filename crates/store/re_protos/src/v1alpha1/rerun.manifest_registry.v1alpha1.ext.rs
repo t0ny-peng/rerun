@@ -504,6 +504,24 @@ impl PartitionType {
             )),
         }
     }
+
+    pub fn many_from_arrow(array: &dyn Array) -> Result<Vec<Self>, TypeConversionError> {
+        let string_array = array
+            .try_downcast_array_ref::<StringArray>()
+            .map_err(TypeConversionError::ArrowError)?;
+
+        (0..string_array.len())
+            .map(|i| {
+                let resource_type = string_array.value(i);
+                match resource_type {
+                    "rrd" => Ok(Self::Rrd),
+                    _ => Err(TypeConversionError::ArrowError(
+                        ArrowError::InvalidArgumentError(format!("unknown resource type {resource_type}"))
+                    )),
+                }
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -1,14 +1,13 @@
 use itertools::Itertools as _;
 
-use re_chunk::{ComponentName, RowId, UnitChunkShared};
-use re_data_ui::{sorted_component_list_for_ui, DataUi as _};
+use re_chunk::{RowId, UnitChunkShared};
+use re_data_ui::{DataUi as _, sorted_component_list_for_ui};
 use re_entity_db::EntityDb;
-use re_log_types::hash::Hash64;
 use re_log_types::{ComponentPath, EntityPath};
-use re_types::blueprint::archetypes::VisualizerOverrides;
 use re_types::ComponentDescriptor;
+use re_types::blueprint::archetypes::VisualizerOverrides;
 use re_types_core::external::arrow::array::ArrayRef;
-use re_ui::{list_item, UiExt as _};
+use re_ui::{UiExt as _, list_item};
 use re_view::latest_at_with_blueprint_resolved_data;
 use re_viewer_context::{
     DataResult, QueryContext, UiLayout, ViewClassExt as _, ViewContext, ViewSystemIdentifier,
@@ -157,20 +156,6 @@ fn visualizer_components(
     data_result: &DataResult,
     visualizer: &dyn VisualizerSystem,
 ) {
-    // TODO(#6889): remove in favor of `non_empty_component_batch_raw`
-    fn non_empty_component_batch_raw_by_name(
-        unit: Option<&UnitChunkShared>,
-        component_name: ComponentName,
-    ) -> Option<(Option<RowId>, ArrayRef)> {
-        let unit = unit?;
-        let batch = unit.component_batch_raw_by_component_name(component_name)?;
-        if batch.is_empty() {
-            None
-        } else {
-            Some((unit.row_id(), batch))
-        }
-    }
-
     fn non_empty_component_batch_raw(
         unit: Option<&UnitChunkShared>,
         component_descr: &ComponentDescriptor,
@@ -210,20 +195,14 @@ fn visualizer_components(
 
         // Query all the sources for our value.
         // (technically we only need to query those that are shown, but rolling this out makes things easier).
-        let result_override = query_result
-            .overrides
-            .get_by_name(&component_descr.component_name); // TODO(#6889): Use component_descr directly.
-        let raw_override =
-            non_empty_component_batch_raw_by_name(result_override, component_descr.component_name);
+        let result_override = query_result.overrides.get(&component_descr);
+        let raw_override = non_empty_component_batch_raw(result_override, &component_descr);
 
         let result_store = query_result.results.get(&component_descr);
         let raw_store = non_empty_component_batch_raw(result_store, &component_descr);
 
-        let result_default = query_result
-            .defaults
-            .get_by_name(&component_descr.component_name); // TODO(#6889): Use component_descr directly.
-        let raw_default =
-            non_empty_component_batch_raw_by_name(result_default, component_descr.component_name);
+        let result_default = query_result.defaults.get(&component_descr);
+        let raw_default = non_empty_component_batch_raw(result_default, &component_descr);
 
         let raw_fallback = visualizer
             .fallback_provider()
@@ -254,7 +233,7 @@ fn visualizer_components(
                     ui,
                     raw_current_value.as_ref(),
                     override_path,
-                    component_descr.component_name,
+                    component_descr.clone(),
                     multiline,
                 )
             {
@@ -291,8 +270,8 @@ fn visualizer_components(
                             &store_query,
                             ctx.recording(),
                             &data_result.entity_path,
-                            component_descr.component_name,
-                            current_value_row_id.map(Hash64::hash),
+                            &component_descr,
+                            current_value_row_id,
                             raw_current_value.as_ref(),
                         );
                         return;
@@ -384,7 +363,7 @@ fn visualizer_components(
                                 &store_query,
                                 ctx.recording(),
                                 &data_result.entity_path,
-                                component_descr.component_name,
+                                &component_descr,
                                 None,
                                 raw_fallback.as_ref(),
                             );
@@ -421,7 +400,7 @@ fn visualizer_components(
                     menu_more(
                         ctx,
                         ui,
-                        &component_descr,
+                        component_descr.clone(),
                         override_path,
                         &raw_override.clone().map(|(_, raw_override)| raw_override),
                         raw_default.clone().map(|(_, raw_override)| raw_override),
@@ -461,8 +440,8 @@ fn editable_blueprint_component_list_item(
                     ui,
                     query_ctx.viewer_ctx.blueprint_db(),
                     blueprint_path,
-                    component_descr.component_name,
-                    row_id.map(Hash64::hash),
+                    component_descr,
+                    row_id,
                     raw_override,
                     allow_multiline,
                 );
@@ -470,11 +449,7 @@ fn editable_blueprint_component_list_item(
             .action_button(&re_ui::icons::CLOSE, || {
                 query_ctx
                     .viewer_ctx
-                    // TODO(#6889): Use component_descr directly.
-                    .clear_blueprint_component_by_name(
-                        blueprint_path,
-                        component_descr.component_name,
-                    );
+                    .clear_blueprint_component(blueprint_path, component_descr.clone());
             }),
     )
 }
@@ -484,24 +459,22 @@ fn editable_blueprint_component_list_item(
 fn menu_more(
     ctx: &ViewContext<'_>,
     ui: &mut egui::Ui,
-    component_descr: &re_types::ComponentDescriptor,
+    component_descr: re_types::ComponentDescriptor,
     override_path: &EntityPath,
     raw_override: &Option<ArrayRef>,
     raw_default: Option<ArrayRef>,
     raw_fallback: arrow::array::ArrayRef,
     raw_current_value: arrow::array::ArrayRef,
 ) {
-    // TODO(#6889): Use component_descr directly on all of the usages here.
-    let component_name = component_descr.component_name;
-
     if ui
         .add_enabled(raw_override.is_some(), egui::Button::new("Remove override"))
         .on_disabled_hover_text("There's no override active")
         .clicked()
     {
         // TODO(#6889): Use component_descr directly.
-        ctx.clear_blueprint_component_by_name(override_path, component_name);
-        ui.close_menu();
+        ctx.clear_blueprint_component(override_path, component_descr);
+        ui.close();
+        return;
     }
 
     if ui
@@ -513,20 +486,22 @@ fn menu_more(
         .clicked()
     {
         if let Some(raw_default) = raw_default {
-            ctx.save_blueprint_array(override_path, component_name, raw_default);
+            ctx.save_blueprint_array(override_path, component_descr, raw_default);
         }
-        ui.close_menu();
+        ui.close();
+        return;
     }
 
     if ui.button("Set to fallback value").clicked() {
-        ctx.save_blueprint_array(override_path, component_name, raw_fallback);
-        ui.close_menu();
+        ctx.save_blueprint_array(override_path, component_descr, raw_fallback);
+        ui.close();
+        return;
     }
 
     let override_differs_from_default = raw_override
         != &ctx
             .viewer_ctx
-            .raw_latest_at_in_default_blueprint(override_path, component_name);
+            .raw_latest_at_in_default_blueprint(override_path, &component_descr);
     if ui
         .add_enabled(
             override_differs_from_default,
@@ -536,17 +511,18 @@ fn menu_more(
         .on_disabled_hover_text("Current override is the same as the override specified in the default blueprint (if any)")
         .clicked()
     {
-        ctx.reset_blueprint_component_by_name(override_path, component_name);
-        ui.close_menu();
+        ctx.reset_blueprint_component(override_path, component_descr);
+        ui.close();
+        return;
     }
 
     if ui.button("Make default for current view").clicked() {
         ctx.save_blueprint_array(
             &ViewBlueprint::defaults_path(ctx.view_id),
-            component_name,
+            component_descr,
             raw_current_value,
         );
-        ui.close_menu();
+        ui.close();
     }
 }
 
@@ -573,7 +549,7 @@ fn menu_add_new_visualizer(
 
             ctx.save_blueprint_archetype(override_path, &archetype);
 
-            ui.close_menu();
+            ui.close();
         }
     }
 }

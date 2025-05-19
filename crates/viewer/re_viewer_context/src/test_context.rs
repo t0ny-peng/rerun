@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use ahash::HashMap;
 use egui::Context;
@@ -7,10 +7,10 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
 use crate::{
-    blueprint_timeline, command_channel, ApplicationSelectionState, CommandReceiver, CommandSender,
-    ComponentUiRegistry, DataQueryResult, GlobalContext, ItemCollection, RecordingConfig,
-    StorageContext, StoreContext, SystemCommand, ViewClass, ViewClassRegistry, ViewId, ViewStates,
-    ViewerContext,
+    ApplicationSelectionState, CommandReceiver, CommandSender, ComponentUiRegistry,
+    DataQueryResult, GlobalContext, ItemCollection, RecordingConfig, StorageContext, StoreContext,
+    SystemCommand, ViewClass, ViewClassRegistry, ViewId, ViewStates, ViewerContext,
+    blueprint_timeline, command_channel,
 };
 use re_chunk::{Chunk, ChunkBuilder};
 use re_chunk_store::LatestAtQuery;
@@ -29,6 +29,8 @@ pub trait HarnessExt {
         num_pixels: u64,
         broken_percent_threshold: f64,
     );
+
+    fn snapshot_with_broken_pixels(&mut self, name: &str, broken_pixels: i32);
 }
 
 impl HarnessExt for egui_kittest::Harness<'_> {
@@ -52,6 +54,28 @@ impl HarnessExt for egui_kittest::Harness<'_> {
                     assert!(
                         broken_percent <= broken_percent_threshold,
                         "{name} failed because {broken_percent} > {broken_percent_threshold}\n{diff_path:?}"
+                    );
+                }
+
+                _ => panic!("{name} failed: {err}"),
+            },
+        }
+    }
+
+    fn snapshot_with_broken_pixels(&mut self, name: &str, broken_pixels_threshold: i32) {
+        match self.try_snapshot(name) {
+            Ok(_) => {}
+
+            Err(err) => match err {
+                egui_kittest::SnapshotError::Diff {
+                    name,
+                    diff: num_broken_pixels,
+                    diff_path,
+                } => {
+                    re_log::debug!(num_broken_pixels, broken_pixels_threshold);
+                    assert!(
+                        num_broken_pixels <= broken_pixels_threshold,
+                        "{name} failed because {num_broken_pixels} > {broken_pixels_threshold}\n{diff_path:?}"
                     );
                 }
 
@@ -114,7 +138,15 @@ impl Default for TestContext {
         let blueprint_query = LatestAtQuery::latest(blueprint_timeline());
 
         let component_ui_registry = ComponentUiRegistry::new(Box::new(
-            |_ctx, _ui, _ui_layout, _query, _db, _entity_path, _row_id, _component| {},
+            |_ctx,
+             _ui,
+             _ui_layout,
+             _query,
+             _db,
+             _entity_path,
+             _row_id,
+             _component_descriptor,
+             _component| {},
         ));
 
         let reflection =

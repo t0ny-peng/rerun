@@ -1,4 +1,4 @@
-use egui::{emath::RectTransform, pos2, vec2, Align2, Color32, Pos2, Rect, Shape, Vec2};
+use egui::{Align2, Color32, Pos2, Rect, Shape, Vec2, emath::RectTransform, pos2, vec2};
 use re_math::IsoTransform;
 
 use re_entity_db::EntityPath;
@@ -8,17 +8,17 @@ use re_types::blueprint::{
     archetypes::{Background, NearClipPlane, VisualBounds2D},
     components as blueprint_components,
 };
-use re_ui::{icon_text, icons, shortcut_with_icon, ContextExt as _, Help, MouseButtonText};
+use re_ui::{ContextExt as _, Help, MouseButtonText, icon_text, icons, shortcut_with_icon};
 use re_view::controls::{DRAG_PAN2D_BUTTON, ZOOM_SCROLL_MODIFIER};
 use re_viewer_context::{
-    gpu_bridge, ItemContext, ViewQuery, ViewSystemExecutionError, ViewerContext,
+    ItemContext, ViewQuery, ViewSystemExecutionError, ViewerContext, gpu_bridge,
 };
 use re_viewport_blueprint::ViewProperty;
 
 use super::{eye::Eye, ui::create_labels};
 use crate::{
-    ui::SpatialViewState, view_kind::SpatialViewKind, visualizers::collect_ui_labels, Pinhole,
-    SpatialView2D,
+    Pinhole, SpatialView2D, ui::SpatialViewState, view_kind::SpatialViewKind,
+    visualizers::collect_ui_labels,
 };
 
 // ---
@@ -101,9 +101,13 @@ fn ui_from_scene(
     // Update blueprint if changed
     let updated_bounds: blueprint_components::VisualBounds2D = bounds_rect.into();
     if response.double_clicked() {
-        bounds_property.reset_blueprint_component::<blueprint_components::VisualBounds2D>(ctx);
+        bounds_property.reset_blueprint_component(ctx, VisualBounds2D::descriptor_range());
     } else if bounds != updated_bounds {
-        bounds_property.save_blueprint_component(ctx, &updated_bounds);
+        bounds_property.save_blueprint_component(
+            ctx,
+            &VisualBounds2D::descriptor_range(),
+            &updated_bounds,
+        );
     }
     // Update stored bounds on the state, so visualizers see an up-to-date value.
     view_state.visual_bounds_2d = Some(bounds);

@@ -6,28 +6,27 @@ use re_build_info::CrateVersion;
 use re_capabilities::MainThreadToken;
 use re_chunk::TimelineName;
 use re_data_source::{DataSource, FileContents};
-use re_entity_db::{entity_db::EntityDb, InstancePath};
+use re_entity_db::{InstancePath, entity_db::EntityDb};
 use re_log_types::{ApplicationId, FileSource, LogMsg, StoreId, StoreKind, TableMsg};
 use re_renderer::WgpuResourcePoolStatistics;
 use re_smart_channel::{ReceiveSet, SmartChannelSource};
-use re_ui::{notifications, DesignTokens, UICommand, UICommandSender as _};
+use re_ui::{ContextExt as _, UICommand, UICommandSender as _, UiExt as _, notifications};
 use re_uri::Origin;
 use re_viewer_context::{
-    command_channel,
-    store_hub::{BlueprintPersistence, StoreHub, StoreHubStats},
     AppOptions, AsyncRuntimeHandle, BlueprintUndoState, CommandReceiver, CommandSender,
     ComponentUiRegistry, DisplayMode, Item, PlayState, RecordingConfig, StorageContext,
     StoreContext, StoreHubEntry, SystemCommand, SystemCommandSender as _, TableStore, ViewClass,
-    ViewClassRegistry, ViewClassRegistryError,
+    ViewClassRegistry, ViewClassRegistryError, command_channel, santitize_file_name,
+    store_hub::{BlueprintPersistence, StoreHub, StoreHubStats},
 };
 
 use crate::startup_options::StartupOptions;
 use crate::{
+    AppState,
     app_blueprint::{AppBlueprint, PanelStateOverrides},
     app_state::WelcomeScreenState,
     background_tasks::BackgroundTasks,
     event::ViewerEventDispatcher,
-    AppState,
 };
 // ----------------------------------------------------------------------------
 
@@ -1243,7 +1242,7 @@ impl App {
     ) {
         let frame = egui::Frame {
             fill: ui.visuals().panel_fill,
-            ..DesignTokens::bottom_panel_frame()
+            ..ui.design_tokens().bottom_panel_frame()
         };
 
         egui::TopBottomPanel::bottom("memory_panel")
@@ -1266,7 +1265,7 @@ impl App {
         egui::SidePanel::left("style_panel")
             .default_width(300.0)
             .resizable(true)
-            .frame(DesignTokens::top_panel_frame())
+            .frame(ui.design_tokens().top_panel_frame())
             .show_animated_inside(ui, self.egui_debug_panel_open, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     if ui
@@ -1370,6 +1369,7 @@ impl App {
                             },
                             is_history_enabled,
                             self.event_dispatcher.as_ref(),
+                            &self.async_runtime,
                         );
                         render_ctx.before_submit();
                     }
@@ -1394,32 +1394,29 @@ impl App {
         // TODO(grtlr): Should we bring back analytics for this too?
         self.rx_table.lock().retain(|rx| match rx.try_recv() {
             Ok(table) => {
+                // TODO(grtlr): For now we don't append anything to existing stores and always replace.
+                // TODO(ab): When we actually append to existing table, we will have to clear the UI
+                // cache by calling `DataFusionTableWidget::clear_state`.
+                let store = TableStore::default();
+                if let Err(err) = store.add_record_batch(table.data.clone()) {
+                    re_log::warn!("Failed to load table {}: {err}", table.id);
+                } else {
+                    if store_hub
+                        .insert_table_store(table.id.clone(), store)
+                        .is_some()
+                    {
+                        re_log::debug!("Overwritten table store with id: `{}`", table.id);
+                    } else {
+                        re_log::debug!("Inserted table store with id: `{}`", table.id);
+                    };
+                    self.command_sender.send_system(SystemCommand::SetSelection(
+                        re_viewer_context::Item::TableId(table.id.clone()),
+                    ));
 
-                match re_sorbet::SorbetBatch::try_from_record_batch(&table.data, re_sorbet::BatchType::Dataframe)  {
-                    Ok(sorbet_batch) => {
-                        // TODO(grtlr): For now we don't append anything to existing stores and always replace.
-                        let store = TableStore::default();
-                        store.add_batch(sorbet_batch);
-
-                        if store_hub.insert_table_store(table.id.clone(), store).is_some() {
-                            re_log::debug!("Overwritten table store with id: `{}`", table.id);
-                        } else {
-                            re_log::debug!("Inserted table store with id: `{}`", table.id);
-                        };
-                        self.command_sender.send_system(SystemCommand::SetSelection(
-                            re_viewer_context::Item::TableId(table.id.clone()),
-                        ));
-
-                        // If the viewer is in the background, tell the user that it has received something new.
-                        egui_ctx.send_viewport_cmd(
-                            egui::ViewportCommand::RequestUserAttention(
-                                egui::UserAttentionType::Informational,
-                            ),
-                        );
-                    },
-                    Err(err) => {
-                        re_log::warn!("the received dataframe does not contain Sorbet-complaiant batches: {err}");
-                    }
+                    // If the viewer is in the background, tell the user that it has received something new.
+                    egui_ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                        egui::UserAttentionType::Informational,
+                    ));
                 }
 
                 true
@@ -1966,7 +1963,7 @@ fn blueprint_loader() -> BlueprintPersistence {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn blueprint_loader() -> BlueprintPersistence {
-    use re_viewer_context::StoreBundle;
+    use re_entity_db::StoreBundle;
 
     fn load_blueprint_from_disk(app_id: &ApplicationId) -> anyhow::Result<Option<StoreBundle>> {
         let blueprint_path = crate::saving::default_blueprint_path(app_id)?;
@@ -2020,8 +2017,14 @@ fn blueprint_loader() -> BlueprintPersistence {
 }
 
 impl eframe::App for App {
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.0; 4] // transparent so we can get rounded corners when doing [`re_ui::CUSTOM_WINDOW_DECORATIONS`]
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        if re_ui::CUSTOM_WINDOW_DECORATIONS {
+            [0.; 4] // transparent
+        } else if visuals.dark_mode {
+            [0., 0., 0., 1.]
+        } else {
+            [1., 1., 1., 1.]
+        }
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
@@ -2332,7 +2335,7 @@ fn paint_native_window_frame(egui_ctx: &egui::Context) {
     painter.rect_stroke(
         egui_ctx.screen_rect(),
         re_ui::DesignTokens::native_window_corner_radius(),
-        re_ui::design_tokens().native_frame_stroke,
+        egui_ctx.design_tokens().native_frame_stroke,
         egui::StrokeKind::Inside,
     );
 }
@@ -2470,7 +2473,14 @@ fn save_recording(
         .and_then(|info| info.store_version)
         .unwrap_or(re_build_info::CrateVersion::LOCAL);
 
-    let file_name = "data.rrd";
+    let file_name = if let Some(recording_name) = entity_db
+        .recording_property::<re_types::components::Name>(
+            &re_types::archetypes::RecordingProperties::descriptor_name(),
+        ) {
+        format!("{}.rrd", santitize_file_name(&recording_name))
+    } else {
+        "data.rrd".to_owned()
+    };
 
     let title = if loop_selection.is_some() {
         "Save loop selection"
@@ -2481,7 +2491,7 @@ fn save_recording(
     save_entity_db(
         app,
         rrd_version,
-        file_name.to_owned(),
+        file_name,
         title.to_owned(),
         entity_db.to_messages(loop_selection),
     )

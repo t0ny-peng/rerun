@@ -1,13 +1,13 @@
 use re_chunk_store::LatestAtQuery;
-use re_entity_db::{external::re_query::LatestAtResults, EntityDb};
+use re_entity_db::{EntityDb, external::re_query::LatestAtResults};
 use re_log_types::EntityPath;
 use re_types::{
     Archetype, ArchetypeName, ComponentBatch, ComponentDescriptor, ComponentName,
     DeserializationError,
 };
 use re_viewer_context::{
-    external::re_entity_db::EntityTree, ComponentFallbackError, ComponentFallbackProvider,
-    QueryContext, ViewId, ViewSystemExecutionError, ViewerContext,
+    ComponentFallbackError, ComponentFallbackProvider, QueryContext, ViewId,
+    ViewSystemExecutionError, ViewerContext, external::re_entity_db::EntityTree,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -74,10 +74,10 @@ impl ViewProperty {
         let blueprint_store_path =
             entity_path_for_view_property(view_id, blueprint_db.tree(), archetype_name);
 
-        let query_results = blueprint_db.latest_at_by_name(
+        let query_results = blueprint_db.latest_at(
             &blueprint_query,
             &blueprint_store_path,
-            component_descrs.iter().map(|descr| descr.component_name),
+            component_descrs.iter(),
         );
 
         Self {
@@ -162,10 +162,8 @@ impl ViewProperty {
         component_descr: &ComponentDescriptor,
     ) -> Option<arrow::array::ArrayRef> {
         self.query_results
-            .get_by_name(&component_descr.component_name)
-            .and_then(|unit| {
-                unit.component_batch_raw_by_component_name(component_descr.component_name)
-            })
+            .get(component_descr)
+            .and_then(|unit| unit.component_batch_raw(component_descr))
     }
 
     fn component_or_fallback_raw(
@@ -190,39 +188,55 @@ impl ViewProperty {
     pub fn save_blueprint_component(
         &self,
         ctx: &ViewerContext<'_>,
-        components: &dyn ComponentBatch,
+        component_descr: &ComponentDescriptor,
+        component_batch: &dyn ComponentBatch,
     ) {
-        ctx.save_blueprint_component(&self.blueprint_store_path, components);
+        if !self.component_descrs.contains(component_descr) {
+            if cfg!(debug_assertions) {
+                panic!(
+                    "trying to save a blueprint component `{component_descr}` that is not part of the view property for archetype `{}`",
+                    self.archetype_name
+                );
+            } else {
+                re_log::warn_once!(
+                    "trying to save a blueprint component `{component_descr}` that is not part of the view property for archetype `{}`",
+                    self.archetype_name
+                );
+            }
+        }
+        ctx.save_blueprint_component(&self.blueprint_store_path, component_descr, component_batch);
     }
 
     /// Clears a blueprint component.
-    pub fn clear_blueprint_component<C: re_types::Component>(&self, ctx: &ViewerContext<'_>) {
-        ctx.clear_blueprint_component_by_name(&self.blueprint_store_path, C::name());
+    pub fn clear_blueprint_component(
+        &self,
+        ctx: &ViewerContext<'_>,
+        component_descr: ComponentDescriptor,
+    ) {
+        ctx.clear_blueprint_component(&self.blueprint_store_path, component_descr);
     }
 
     /// Resets a blueprint component to the value it had in the default blueprint.
-    pub fn reset_blueprint_component<C: re_types::Component>(&self, ctx: &ViewerContext<'_>) {
-        ctx.reset_blueprint_component_by_name(&self.blueprint_store_path, C::name());
+    pub fn reset_blueprint_component(
+        &self,
+        ctx: &ViewerContext<'_>,
+        component_descr: ComponentDescriptor,
+    ) {
+        ctx.reset_blueprint_component(&self.blueprint_store_path, component_descr);
     }
 
     /// Resets all components to the values they had in the default blueprint.
     pub fn reset_all_components(&self, ctx: &ViewerContext<'_>) {
         // Don't use `self.query_results.components.keys()` since it may already have some components missing since they didn't show up in the query.
-        for component_descr in &self.component_descrs {
-            ctx.reset_blueprint_component_by_name(
-                &self.blueprint_store_path,
-                component_descr.component_name,
-            );
+        for component_descr in self.component_descrs.iter().cloned() {
+            ctx.reset_blueprint_component(&self.blueprint_store_path, component_descr);
         }
     }
 
     /// Resets all components to empty values, i.e. the fallback.
     pub fn reset_all_components_to_empty(&self, ctx: &ViewerContext<'_>) {
-        for component_descr in self.query_results.components.keys() {
-            ctx.clear_blueprint_component_by_name(
-                &self.blueprint_store_path,
-                component_descr.component_name,
-            );
+        for component_descr in self.query_results.components.keys().cloned() {
+            ctx.clear_blueprint_component(&self.blueprint_store_path, component_descr);
         }
     }
 

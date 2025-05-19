@@ -6,7 +6,7 @@ use egui::{Frame, Margin, RichText};
 use re_log_types::EntryId;
 use re_protos::manifest_registry::v1alpha1::DATASET_MANIFEST_ID_FIELD_NAME;
 use re_ui::list_item::ItemActionButton;
-use re_ui::{icons, list_item, UiExt as _};
+use re_ui::{UiExt as _, icons, list_item};
 use re_viewer_context::{
     AsyncRuntimeHandle, DisplayMode, Item, SystemCommand, SystemCommandSender as _, ViewerContext,
 };
@@ -69,9 +69,9 @@ impl Server {
                 ui.horizontal(|ui| {
                     ui.heading(RichText::new("Catalog").strong());
                     if ui.small_icon_button(&icons::RESET).clicked() {
-                        let _ = ctx
-                            .command_sender
-                            .send(Command::RefreshCollection(self.origin.clone()));
+                        ctx.command_sender
+                            .send(Command::RefreshCollection(self.origin.clone()))
+                            .ok();
                     }
                 });
 
@@ -117,17 +117,18 @@ impl Server {
     ) {
         re_dataframe_ui::DataFusionTableWidget::new(
             self.tables_session_ctx.ctx.clone(),
-            //egui::Id::new(&self.origin),
             dataset.name(),
         )
         .title(dataset.name())
         .title_button(ItemActionButton::new(&re_ui::icons::RESET, || {
-            let _ = ctx
-                .command_sender
-                .send(Command::RefreshCollection(self.origin.clone()));
+            ctx.command_sender
+                .send(Command::RefreshCollection(self.origin.clone()))
+                .ok();
         }))
         .column_renamer(|desc| {
-            let name = desc.name();
+            //TODO(ab): with this strategy, we do not display relevant entity path if any.
+            let name = desc.short_name();
+
             name.strip_prefix("rerun_")
                 .unwrap_or(name)
                 .replace('_', " ")
@@ -158,9 +159,9 @@ impl Server {
                     .on_hover_text("Remove server");
 
                 if response.clicked() {
-                    let _ = ctx
-                        .command_sender
-                        .send(Command::RemoveServer(self.origin.clone()));
+                    ctx.command_sender
+                        .send(Command::RemoveServer(self.origin.clone()))
+                        .ok();
                 }
 
                 response
@@ -273,7 +274,7 @@ impl RedapServers {
 
     /// Add a server to the hub.
     pub fn add_server(&self, origin: re_uri::Origin) {
-        let _ = self.command_sender.send(Command::AddServer(origin));
+        self.command_sender.send(Command::AddServer(origin)).ok();
     }
 
     /// Per-frame housekeeping.
@@ -282,7 +283,7 @@ impl RedapServers {
     /// - Update all servers.
     pub fn on_frame_start(&mut self, runtime: &AsyncRuntimeHandle, egui_ctx: &egui::Context) {
         self.pending_servers.drain(..).for_each(|origin| {
-            let _ = self.command_sender.send(Command::AddServer(origin));
+            self.command_sender.send(Command::AddServer(origin)).ok();
         });
         while let Ok(command) = self.command_receiver.try_recv() {
             self.handle_command(runtime, egui_ctx, command);
@@ -366,7 +367,7 @@ impl RedapServers {
     }
 
     pub fn open_add_server_modal(&self) {
-        let _ = self.command_sender.send(Command::OpenAddServerModal);
+        self.command_sender.send(Command::OpenAddServerModal).ok();
     }
 
     pub fn entry_ui(

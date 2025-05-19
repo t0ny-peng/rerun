@@ -1,23 +1,22 @@
-use egui::NumExt as _;
+use egui::{NumExt as _, TextBuffer};
 use egui_tiles::ContainerKind;
 
-use re_context_menu::{context_menu_ui_for_item, SelectionUpdateBehavior};
+use re_context_menu::{SelectionUpdateBehavior, context_menu_ui_for_item};
 use re_data_ui::{
-    item_ui::{self, cursor_interact_with_selectable, guess_query_and_db_for_selected_entity},
     DataUi,
+    item_ui::{self, cursor_interact_with_selectable, guess_query_and_db_for_selected_entity},
 };
 use re_entity_db::{EntityPath, InstancePath};
 use re_log_types::{ComponentPath, EntityPathFilter, EntityPathSubs, ResolvedEntityPathFilter};
 use re_ui::{
-    icons,
+    ContextExt as _, UiExt as _, icons,
     list_item::{self, PropertyContent},
-    ContextExt as _, UiExt as _,
 };
 use re_viewer_context::{
-    contents_name_style, icon_for_container_kind, ContainerId, Contents, DataQueryResult,
-    DataResult, HoverHighlight, Item, UiLayout, ViewContext, ViewId, ViewStates, ViewerContext,
+    ContainerId, Contents, DataQueryResult, DataResult, HoverHighlight, Item, UiLayout,
+    ViewContext, ViewId, ViewStates, ViewerContext, contents_name_style, icon_for_container_kind,
 };
-use re_viewport_blueprint::{ui::show_add_view_or_container_modal, ViewportBlueprint};
+use re_viewport_blueprint::{ViewportBlueprint, ui::show_add_view_or_container_modal};
 
 use crate::{
     defaults_ui::view_components_defaults_section_ui,
@@ -511,6 +510,7 @@ fn entity_path_filter_ui(
     origin: &EntityPath,
 ) -> Option<EntityPathFilter> {
     fn syntax_highlight_entity_path_filter(
+        design_tokens: &re_ui::DesignTokens,
         style: &egui::Style,
         mut string: &str,
     ) -> egui::text::LayoutJob {
@@ -525,9 +525,9 @@ fn entity_path_filter_ui(
             let is_exclusion = line.trim_start().starts_with('-');
 
             let color = if is_exclusion {
-                egui::Color32::LIGHT_RED
+                style.visuals.error_fg_color
             } else {
-                egui::Color32::LIGHT_GREEN
+                design_tokens.info_log_text_color()
             };
 
             let text_format = egui::TextFormat {
@@ -542,8 +542,13 @@ fn entity_path_filter_ui(
         job
     }
 
-    fn text_layouter(ui: &egui::Ui, string: &str, wrap_width: f32) -> std::sync::Arc<egui::Galley> {
-        let mut layout_job = syntax_highlight_entity_path_filter(ui.style(), string);
+    fn text_layouter(
+        ui: &egui::Ui,
+        text: &dyn TextBuffer,
+        wrap_width: f32,
+    ) -> std::sync::Arc<egui::Galley> {
+        let mut layout_job =
+            syntax_highlight_entity_path_filter(ui.design_tokens(), ui.style(), text.as_str());
         layout_job.wrap.max_width = wrap_width;
         ui.fonts(|f| f.layout_job(layout_job))
     }

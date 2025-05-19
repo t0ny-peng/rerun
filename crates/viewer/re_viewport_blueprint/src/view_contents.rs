@@ -6,19 +6,19 @@ use parking_lot::Mutex;
 use slotmap::SlotMap;
 use smallvec::SmallVec;
 
-use re_entity_db::{external::re_chunk_store::LatestAtQuery, EntityDb, EntityTree};
+use re_entity_db::{EntityDb, EntityTree, external::re_chunk_store::LatestAtQuery};
 use re_log_types::{
-    path::RuleEffect, EntityPath, EntityPathFilter, EntityPathSubs, ResolvedEntityPathFilter,
-    ResolvedEntityPathRule, Timeline,
+    EntityPath, EntityPathFilter, EntityPathSubs, ResolvedEntityPathFilter, ResolvedEntityPathRule,
+    Timeline, path::RuleEffect,
 };
+use re_types::Loggable as _;
 use re_types::{
+    Archetype as _, ViewClassIdentifier,
     blueprint::{
         archetypes as blueprint_archetypes, components as blueprint_components,
         components::QueryExpression,
     },
-    Archetype as _, ViewClassIdentifier,
 };
-use re_types::{components, Component as _, Loggable as _};
 use re_viewer_context::{
     DataQueryResult, DataResult, DataResultHandle, DataResultNode, DataResultTree,
     IndicatedEntities, MaybeVisualizableEntities, OverridePath, PerVisualizer, PropertyOverrides,
@@ -256,6 +256,7 @@ impl ViewContents {
         )
         .save_blueprint_component(
             ctx,
+            &blueprint_archetypes::ViewContents::descriptor_query(),
             &self
                 .new_entity_path_filter
                 .lock()
@@ -482,8 +483,7 @@ impl<'a> DataQueryPropertyResolver<'a> {
                 .latest_at(
                     blueprint_query,
                     override_path,
-                    // TODO(andreas): Should there be any tags on this one? We don't have an archetype for it yet.
-                    [&blueprint_components::VisualizerOverride::descriptor()],
+                    [&blueprint_archetypes::VisualizerOverrides::descriptor_ranges()],
                 )
                 .component_batch::<blueprint_components::VisualizerOverride>()
             {
@@ -514,26 +514,20 @@ impl<'a> DataQueryPropertyResolver<'a> {
                 .all_components_for_entity(&override_subtree.path)
                 .unwrap_or_default()
             {
-                let component_name = component_descr.component_name;
-
                 if let Some(component_data) = blueprint
                     .storage_engine()
                     .cache()
-                    .latest_at(blueprint_query, override_path, [component_name])
-                    .component_batch_raw(&component_name)
+                    .latest_at(blueprint_query, override_path, [&component_descr])
+                    .component_batch_raw(&component_descr)
                 {
                     // We regard empty overrides as non-existent. This is important because there is no other way of doing component-clears.
                     if !component_data.is_empty() {
-                        // TODO(andreas): Why not keep the component data while we're here? Could speed up things a lot down the line.
-                        component_overrides.insert(
-                            component_name,
-                            OverridePath::blueprint_path(override_path.clone()),
-                        );
-
                         // Handle special overrides:
-
+                        //
                         // Visible time range override.
-                        if component_name == blueprint_components::VisibleTimeRange::name() {
+                        if component_descr
+                            == blueprint_archetypes::VisibleTimeRanges::descriptor_ranges()
+                        {
                             if let Ok(visible_time_ranges) =
                                 blueprint_components::VisibleTimeRange::from_arrow(&component_data)
                             {
@@ -546,19 +540,29 @@ impl<'a> DataQueryPropertyResolver<'a> {
                             }
                         }
                         // Visible override.
-                        else if component_name == components::Visible::name() {
+                        else if component_descr
+                            == blueprint_archetypes::EntityBehavior::descriptor_visible()
+                        {
                             if let Some(visible_array) = component_data.as_boolean_opt() {
                                 // We already checked for non-empty above, so this should be safe.
                                 property_overrides.visible = visible_array.value(0);
                             }
                         }
                         // Interactive override.
-                        else if component_name == components::Interactive::name() {
+                        else if component_descr
+                            == blueprint_archetypes::EntityBehavior::descriptor_interactive()
+                        {
                             if let Some(interactive_array) = component_data.as_boolean_opt() {
                                 // We already checked for non-empty above, so this should be safe.
                                 property_overrides.interactive = interactive_array.value(0);
                             }
                         }
+
+                        // TODO(andreas): Why not keep the component data while we're here? Could speed up things a lot down the line.
+                        component_overrides.insert(
+                            component_descr,
+                            OverridePath::blueprint_path(override_path.clone()),
+                        );
                     }
                 }
             }
@@ -628,8 +632,8 @@ mod tests {
 
     use re_chunk::{Chunk, RowId};
     use re_entity_db::EntityDb;
-    use re_log_types::{example_components::MyPoint, StoreId, TimePoint, Timeline};
-    use re_viewer_context::{blueprint_timeline, StoreContext, VisualizableEntities};
+    use re_log_types::{StoreId, TimePoint, Timeline, example_components::MyPoint};
+    use re_viewer_context::{StoreContext, VisualizableEntities, blueprint_timeline};
 
     use super::*;
 

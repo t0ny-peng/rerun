@@ -1,20 +1,20 @@
 use egui::{Response, Ui};
 use smallvec::SmallVec;
 
-use re_context_menu::{context_menu_ui_for_item_with_context, SelectionUpdateBehavior};
+use re_context_menu::{SelectionUpdateBehavior, context_menu_ui_for_item_with_context};
 use re_data_ui::item_ui::guess_instance_path_icon;
 use re_entity_db::InstancePath;
 use re_log_types::{ApplicationId, EntityPath};
 use re_ui::filter_widget::format_matching_text;
 use re_ui::{
-    drag_and_drop::DropTarget, filter_widget, list_item, ContextExt as _, DesignTokens, UiExt as _,
+    ContextExt as _, DesignTokens, UiExt as _, drag_and_drop::DropTarget, filter_widget, list_item,
 };
 use re_viewer_context::{
-    contents_name_style, icon_for_container_kind, CollapseScope, ContainerId, Contents,
-    DragAndDropFeedback, DragAndDropPayload, HoverHighlight, Item, ItemContext,
-    SystemCommandSender as _, ViewId, ViewerContext, VisitorControlFlow,
+    CollapseScope, ContainerId, Contents, DragAndDropFeedback, DragAndDropPayload, HoverHighlight,
+    Item, ItemContext, SystemCommandSender as _, ViewId, ViewerContext, VisitorControlFlow,
+    contents_name_style, icon_for_container_kind,
 };
-use re_viewport_blueprint::{ui::show_add_view_or_container_modal, ViewportBlueprint};
+use re_viewport_blueprint::{ViewportBlueprint, ui::show_add_view_or_container_modal};
 
 use crate::data::{
     BlueprintTreeData, ContainerData, ContentsData, DataResultData, DataResultKind, ViewData,
@@ -1140,13 +1140,10 @@ fn add_new_view_or_container_menu_button(
     ui: &mut egui::Ui,
 ) {
     if ui
-        .add(egui::Button::image_and_text(
-            &re_ui::icons::ADD,
-            "Add view or container…",
-        ))
+        .add(re_ui::icons::ADD.as_button_with_label(ui.design_tokens(), "Add view or container…"))
         .clicked()
     {
-        ui.close_menu();
+        ui.close();
 
         // If a single container is selected, we use it as target. Otherwise, we target the
         // root container.
@@ -1188,7 +1185,8 @@ fn set_blueprint_to_default_menu_buttons(ctx: &ViewerContext<'_>, ui: &mut egui:
     let mut response = ui
         .add_enabled(
             enabled,
-            egui::Button::image_and_text(&re_ui::icons::RESET, "Reset to default blueprint"),
+            re_ui::icons::RESET
+                .as_button_with_label(ui.design_tokens(), "Reset to default blueprint"),
         )
         .on_hover_text("Reset to the default blueprint for this app");
 
@@ -1197,7 +1195,7 @@ fn set_blueprint_to_default_menu_buttons(ctx: &ViewerContext<'_>, ui: &mut egui:
     };
 
     if response.clicked() {
-        ui.close_menu();
+        ui.close();
         ctx.command_sender()
             .send_system(re_viewer_context::SystemCommand::ClearActiveBlueprint);
     }
@@ -1214,12 +1212,13 @@ fn set_blueprint_to_auto_menu_button(ctx: &ViewerContext<'_>, ui: &mut egui::Ui)
     if ui
         .add_enabled(
             enabled,
-            egui::Button::image_and_text(&re_ui::icons::RESET, "Reset to heuristic blueprint"),
+            re_ui::icons::RESET
+                .as_button_with_label(ui.design_tokens(), "Reset to heuristic blueprint"),
         )
         .on_hover_text("Re-populate viewport with automatically chosen views")
         .clicked()
     {
-        ui.close_menu();
+        ui.close();
         ctx.command_sender()
             .send_system(re_viewer_context::SystemCommand::ClearActiveBlueprintAndEnableHeuristics);
     }

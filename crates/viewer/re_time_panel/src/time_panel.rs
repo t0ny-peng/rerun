@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use egui::emath::Rangef;
 use egui::{
-    pos2, Color32, CursorIcon, Modifiers, NumExt as _, Painter, PointerButton, Rect, Response,
-    Shape, Ui, Vec2,
+    Color32, CursorIcon, Modifiers, NumExt as _, Painter, PointerButton, Rect, Response, Shape, Ui,
+    Vec2, pos2, scroll_area::ScrollSource,
 };
 
-use re_context_menu::{context_menu_ui_for_item_with_context, SelectionUpdateBehavior};
-use re_data_ui::item_ui::guess_instance_path_icon;
+use re_context_menu::{SelectionUpdateBehavior, context_menu_ui_for_item_with_context};
 use re_data_ui::DataUi as _;
+use re_data_ui::item_ui::guess_instance_path_icon;
 use re_entity_db::{EntityDb, InstancePath};
 use re_log_types::{
     ApplicationId, ComponentPath, EntityPath, ResolvedTimeRange, TimeInt, TimeReal,
@@ -17,8 +17,8 @@ use re_types::blueprint::components::PanelState;
 use re_types_core::ComponentDescriptor;
 use re_ui::filter_widget::format_matching_text;
 use re_ui::{
-    filter_widget, icon_text, icons, list_item, maybe_plus, modifiers_text, ContextExt as _,
-    DesignTokens, Help, SyntaxHighlighting as _, UiExt as _,
+    ContextExt as _, DesignTokens, Help, SyntaxHighlighting as _, UiExt as _, filter_widget,
+    icon_text, icons, list_item, maybe_plus, modifiers_text,
 };
 use re_viewer_context::{
     CollapseScope, HoverHighlight, Item, ItemContext, RecordingConfig, TimeControl, TimeView,
@@ -28,7 +28,7 @@ use re_viewport_blueprint::ViewportBlueprint;
 
 use crate::{
     recursive_chunks_per_timeline_subscriber::PathRecursiveChunksPerTimelineStoreSubscriber,
-    streams_tree_data::{components_for_entity, EntityData, StreamsTreeData},
+    streams_tree_data::{EntityData, StreamsTreeData, components_for_entity},
     time_axis::TimelineAxis,
     time_control_ui::TimeControlUi,
     time_ranges_ui::TimeRangesUi,
@@ -590,10 +590,10 @@ impl TimePanel {
 
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
-            // We turn off `drag_to_scroll` so that the `ScrollArea` don't steal input from
+            // We turn off `ScrollSource::DRAG` so that the `ScrollArea` don't steal input from
             // the earlier `interact_with_time_area`.
             // We implement drag-to-scroll manually instead!
-            .drag_to_scroll(false)
+            .scroll_source(ScrollSource::MOUSE_WHEEL | ScrollSource::SCROLL_BAR)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0; // no spacing needed for ListItems
 
@@ -1522,8 +1522,7 @@ fn paint_time_ranges_gaps(
             mesh.colored_vertex(right_pos, fill_color);
 
             shadow_mesh.colored_vertex(pos2(right - shadow_width, y), Color32::TRANSPARENT);
-            shadow_mesh
-                .colored_vertex(right_pos, re_ui::design_tokens().shadow_gradient_dark_start);
+            shadow_mesh.colored_vertex(right_pos, ui.design_tokens().shadow_gradient_dark_start);
 
             left_line_strip.push(left_pos);
             right_line_strip.push(right_pos);
@@ -1651,14 +1650,12 @@ fn copy_time_properties_context_menu(
             let time = format!("{}", time.floor().as_i64());
             re_log::info!("Copied hovered timestamp: {}", time);
             ui.ctx().copy_text(time);
-            ui.close_menu();
         };
     } else if let Some(time) = time_ctrl.time_int() {
         if ui.button("Copy current timestamp").clicked() {
             let time = format!("{}", time.as_i64());
             re_log::info!("Copied current timestamp: {}", time);
             ui.ctx().copy_text(time);
-            ui.close_menu();
         };
     }
 
@@ -1666,7 +1663,6 @@ fn copy_time_properties_context_menu(
         let timeline = format!("{}", time_ctrl.timeline().name());
         re_log::info!("Copied current timeline: {}", timeline);
         ui.ctx().copy_text(timeline);
-        ui.close_menu();
     }
 }
 

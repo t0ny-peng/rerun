@@ -16,7 +16,7 @@ use re_chunk::EntityPath;
 use re_data_ui::item_ui::{cursor_interact_with_selectable, guess_instance_path_icon};
 use re_entity_db::InstancePath;
 use re_log_types::EntityPathPart;
-use re_ui::{icons, list_item, DesignTokens, SyntaxHighlighting as _, UiExt as _};
+use re_ui::{DesignTokens, SyntaxHighlighting as _, UiExt as _, icons, list_item};
 use re_viewer_context::{Contents, Item, ViewId, ViewerContext};
 use re_viewport_blueprint::ViewportBlueprint;
 
@@ -206,7 +206,7 @@ fn last_part_of_item_heading(
     };
 
     let button = if with_icon {
-        egui::Button::image_and_text(icon.as_image(), label).image_tint_follows_text_color(true)
+        icon.as_button_with_label(ui.design_tokens(), label)
     } else {
         egui::Button::new(label)
     };
@@ -238,8 +238,7 @@ fn viewport_breadcrumbs(
         tooltip,
     } = ItemTitle::from_contents(ctx, viewport, &contents);
 
-    let mut response =
-        ui.add(egui::Button::image(icon.as_image()).image_tint_follows_text_color(true));
+    let mut response = ui.add(icon.as_button());
     if let Some(tooltip) = tooltip {
         response = response.on_hover_text(tooltip);
     }
@@ -293,7 +292,7 @@ fn entity_path_breadcrumbs(
             // just to make it clear that this is a different kind of hierarchy.
             &icons::RECORDING // streams hierarchy
         };
-        egui::Button::image(icon.as_image()).image_tint_follows_text_color(true)
+        icon.as_button()
     };
 
     let response = ui.add(button);

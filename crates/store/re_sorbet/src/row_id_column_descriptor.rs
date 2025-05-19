@@ -22,6 +22,13 @@ impl RowIdColumnDescriptor {
         Self { is_sorted }
     }
 
+    /// Short field/column name
+    #[inline]
+    #[expect(clippy::unused_self)]
+    pub fn short_name(&self) -> String {
+        RowId::descriptor().short_name()
+    }
+
     /// Human-readable name for this column.
     #[inline]
     #[expect(clippy::unused_self)]
@@ -78,7 +85,10 @@ impl TryFrom<&ArrowField> for RowIdColumnDescriptor {
                 is_sorted: field.metadata().get_bool("rerun.is_sorted"),
             })
         } else {
-            Err(WrongDatatypeError(format!("Expected a RowId column with datatype {expected_datatype:?}, but column {:?} has datatype {actual_datatype:?}", field.name())))
+            Err(WrongDatatypeError(format!(
+                "Expected a RowId column with datatype {expected_datatype:?}, but column {:?} has datatype {actual_datatype:?}",
+                field.name()
+            )))
         }
     }
 }

@@ -1,5 +1,6 @@
-use std::collections::{BTreeSet, HashSet};
-
+use crate::view_query::Query;
+use egui::PopupCloseBehavior;
+use egui::containers::menu::{MenuButton, MenuConfig};
 use re_chunk_store::ColumnDescriptor;
 use re_log_types::{
     EntityPath, ResolvedTimeRange, TimeInt, TimeType, Timeline, TimelineName, TimestampFormat,
@@ -7,10 +8,9 @@ use re_log_types::{
 use re_sorbet::ColumnSelector;
 use re_types::blueprint::components;
 use re_types_core::{ComponentName, ComponentNameSet};
-use re_ui::{list_item, TimeDragValue, UiExt as _};
+use re_ui::{TimeDragValue, UiExt as _, list_item};
 use re_viewer_context::{ViewId, ViewSystemExecutionError, ViewerContext};
-
-use crate::view_query::Query;
+use std::collections::{BTreeSet, HashSet};
 
 // UI implementation
 impl Query {
@@ -226,7 +226,7 @@ impl Query {
         let all_components = ctx
             .recording_engine()
             .store()
-            .all_components_on_timeline_sorted(timeline, &filter_entity)
+            .all_components_on_timeline_sorted_by_name(timeline, &filter_entity)
             .unwrap_or_default();
 
         // The list of suggested components is built as follows:
@@ -361,6 +361,24 @@ impl Query {
 
             ui.add_space(12.0);
 
+            // TODO(#9921): add support for showing Row ID column
+            if false {
+                let mut show_row_id = view_columns
+                    .iter()
+                    .any(|d| matches!(d, ColumnDescriptor::RowId(_)));
+                if ui
+                    .re_checkbox(&mut show_row_id, "RowID")
+                    .on_disabled_hover_text("The query timeline must always be visible")
+                    .changed()
+                {
+                    if show_row_id {
+                        new_selected_columns.insert(ColumnSelector::RowId);
+                    } else {
+                        new_selected_columns.remove(&ColumnSelector::RowId);
+                    }
+                }
+            }
+
             //
             // Time columns
             //
@@ -435,11 +453,16 @@ impl Query {
 
         ui.list_item_flat_noninteractive(list_item::PropertyContent::new("Columns").value_fn(
             |ui, _| {
-                egui::menu::menu_button(ui, &visible_count_label, |ui| {
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, modal_ui)
-                });
+                MenuButton::new(&visible_count_label)
+                    .config(
+                        MenuConfig::default()
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside),
+                    )
+                    .ui(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, modal_ui)
+                    });
             },
         ));
 

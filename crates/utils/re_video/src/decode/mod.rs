@@ -93,9 +93,11 @@ pub use ffmpeg_h264::{
 #[cfg(target_arch = "wasm32")]
 mod webcodecs;
 
-mod gop_detection;
+mod frame_inspection;
 
-pub use gop_detection::{DetectGopStartError, GopStartDetection, detect_gop_start};
+pub use frame_inspection::{
+    GopStartDetection, VideoChunkInspection, VideoChunkInspectionError, inspect_video_chunk,
+};
 
 use crate::{SampleIndex, Time, VideoDataDescription};
 

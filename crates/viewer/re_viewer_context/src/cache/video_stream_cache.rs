@@ -13,7 +13,7 @@ use re_arrow_util::ArrowArrayDowncastRef as _;
 use re_byte_size::SizeBytes as _;
 use re_chunk::{ChunkId, EntityPath, Span, TimelineName};
 use re_chunk_store::ChunkStoreEvent;
-use re_log_types::{EntityPathHash, TimeType};
+use re_log_types::{EntityPathHash, TimeCell, TimeType};
 use re_types::{archetypes::VideoStream, components};
 use re_video::{DecodeSettings, StableIndexDeque};
 
@@ -85,6 +85,7 @@ impl PlayableVideoStream {
 struct VideoStreamCacheEntry {
     used_this_frame: AtomicBool,
     video_stream: Arc<RwLock<PlayableVideoStream>>,
+    timeline_typ: TimeType,
 }
 
 impl re_byte_size::SizeBytes for VideoStreamCacheEntry {
@@ -92,6 +93,7 @@ impl re_byte_size::SizeBytes for VideoStreamCacheEntry {
         let Self {
             used_this_frame: _,
             video_stream,
+            timeline_typ: _,
         } = self;
 
         video_stream.read().heap_size_bytes()
@@ -168,8 +170,11 @@ impl VideoStreamCache {
                 occupied_entry.into_mut()
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                let timeline_typ = store.timelines().get(&timeline).map(|t| t.typ());
+                let timeline_typ = timeline_typ.unwrap_or(TimeType::Sequence);
+
                 let (video_data, video_sample_buffers) =
-                    load_video_data_from_chunks(store, entity_path, timeline)?;
+                    load_video_data_from_chunks(store, entity_path, timeline, timeline_typ)?;
                 let video = re_renderer::video::Video::load(
                     entity_path.to_string(),
                     video_data,
@@ -181,6 +186,7 @@ impl VideoStreamCache {
                         video_renderer: video,
                         video_sample_buffers,
                     })),
+                    timeline_typ,
                 })
             }
         };
@@ -197,6 +203,7 @@ fn load_video_data_from_chunks(
     store: &re_entity_db::EntityDb,
     entity_path: &EntityPath,
     timeline: TimelineName,
+    timeline_typ: TimeType,
 ) -> Result<
     (
         re_video::VideoDataDescription,
@@ -249,7 +256,7 @@ fn load_video_data_from_chunks(
     let mut video_descr = re_video::VideoDataDescription {
         codec,
         encoding_details: None, // Unknown so far, we'll find out later.
-        timescale: timescale_for_timeline(store, timeline),
+        timescale: timescale_for_timeline(timeline_typ),
         duration: None, // Streams have to be assumed to be open ended, so we don't have a duration.
         gops: StableIndexDeque::new(),
         samples: StableIndexDeque::with_capacity(sample_chunks.len()), // Number of video chunks is minimum number of samples.
@@ -259,20 +266,22 @@ fn load_video_data_from_chunks(
     };
 
     for chunk in sample_chunks {
-        read_samples_from_chunk(timeline, chunk, &mut video_descr, &mut video_sample_buffers)?;
+        read_samples_from_chunk(
+            timeline,
+            timeline_typ,
+            chunk,
+            &mut video_descr,
+            &mut video_sample_buffers,
+        )?;
     }
 
     Ok((video_descr, video_sample_buffers))
 }
 
-fn timescale_for_timeline(
-    store: &re_entity_db::EntityDb,
-    timeline: TimelineName,
-) -> Option<re_video::Timescale> {
-    let timeline_typ = store.timelines().get(&timeline).map(|t| t.typ());
+fn timescale_for_timeline(timeline_typ: TimeType) -> Option<re_video::Timescale> {
     match timeline_typ {
-        Some(TimeType::Sequence) | None => None, // Can't translate the sequence time to real durations
-        Some(TimeType::DurationNs | TimeType::TimestampNs) => Some(re_video::Timescale::NANOSECOND),
+        TimeType::Sequence => None, // Can't translate the sequence time to real durations
+        TimeType::DurationNs | TimeType::TimestampNs => Some(re_video::Timescale::NANOSECOND),
     }
 }
 
@@ -286,6 +295,7 @@ fn timescale_for_timeline(
 /// Changes of encoding details over time will trigger a warning.
 fn read_samples_from_chunk(
     timeline: TimelineName,
+    timeline_typ: TimeType,
     chunk: &re_chunk::Chunk,
     video_descr: &mut re_video::VideoDataDescription,
     chunk_buffers: &mut StableIndexDeque<SampleBuffer>,
@@ -380,7 +390,10 @@ fn read_samples_from_chunk(
                 }
 
                 let sample_idx = sample_base_idx + start;
-                let byte_span = Span { start:offsets[start] as usize, len: lengths[start] };
+                let byte_span = Span {
+                    start: offsets[start] as usize,
+                    len: lengths[start],
+                };
                 let sample_bytes = &values[byte_span.range()];
 
                 // Note that the conversion of this time value is already handled by `VideoDataDescription::timescale`:
@@ -395,26 +408,24 @@ fn read_samples_from_chunk(
                 debug_assert!(decode_timestamp >= previous_max_presentation_timestamp);
                 previous_max_presentation_timestamp = decode_timestamp;
 
-                let is_sync = match re_video::detect_gop_start(sample_bytes, *codec) {
-                    Ok(re_video::GopStartDetection::StartOfGop(new_encoding_details)) => {
-                        if encoding_details.as_ref() != Some(&new_encoding_details) {
-                            if let Some(old_encoding_details) = encoding_details.as_ref() {
-                                re_log::warn_once!(
-                                    "Detected change of video encoding properties (like size, bit depth, compression etc.) over time. \
-                                    This is not supported and may cause playback issues."
-                                );
-                                re_log::trace!(
-                                    "Previous encoding details: {:?}\n\nNew encoding details: {:?}",
-                                    old_encoding_details,
-                                    new_encoding_details
-                                );
-                            }
-                            *encoding_details = Some(new_encoding_details);
-                        }
+                let is_sync = match re_video::inspect_video_chunk(sample_bytes, *codec) {
+                    Ok(re_video::VideoChunkInspection {
+                        gop_detection,
+                        num_frames_detected,
+                    }) => {
+                        warn_on_invalid_number_of_frames_per_sample(
+                            num_frames_detected,
+                            TimeCell::new(timeline_typ, time),
+                        );
 
-                        true
+                        match gop_detection {
+                            re_video::GopStartDetection::StartOfGop(new_encoding_details) => {
+                                update_encoding_details(encoding_details, new_encoding_details);
+                                true
+                            }
+                            re_video::GopStartDetection::NotStartOfGop => false,
+                        }
                     }
-                    Ok(re_video::GopStartDetection::NotStartOfGop) => { false },
 
                     Err(err) => {
                         re_log::error_once!("Failed to detect GOP for video sample: {err}");
@@ -452,7 +463,7 @@ fn read_samples_from_chunk(
 
                     // We're using offsets directly into the chunk data.
                     buffer_index,
-                    byte_span
+                    byte_span,
                 })
             }),
     );
@@ -501,6 +512,51 @@ fn read_samples_from_chunk(
     }
 
     Ok(())
+}
+
+fn warn_on_invalid_number_of_frames_per_sample(num_frames_detected: Option<usize>, time: TimeCell) {
+    match num_frames_detected {
+        None => {
+            // We don't know anything about the frame number, so we don't have anything to complain about.
+        }
+        Some(0) => {
+            // No frame data at all in here -> user input error.
+            // Carry on as if nothing happened, just in case our detection made a mistake.
+            re_log::warn!(
+                "No frame data found in video chunk at time {time}. Every video sample should correspond to exactly one frame."
+            );
+        }
+        Some(1) => {
+            // Great, that's what all data should look like!
+        }
+        Some(num_frames) => {
+            // More than one frame detected -> user input error.
+            // Even if we knew the split of the frames, we can't do much about it since future frames may depend on all frames in this chunk.
+            re_log::warn!(
+                "Detected {num_frames} frames in video chunk at time {time}. Every video sample should correspond to exactly one frame."
+            );
+        }
+    }
+}
+
+fn update_encoding_details(
+    encoding_details: &mut Option<re_video::VideoEncodingDetails>,
+    new_encoding_details: re_video::VideoEncodingDetails,
+) {
+    if encoding_details.as_ref() != Some(&new_encoding_details) {
+        if let Some(old_encoding_details) = encoding_details.as_ref() {
+            re_log::warn_once!(
+                "Detected change of video encoding properties (like size, bit depth, compression etc.) over time. \
+                                            This is not supported and may cause playback issues."
+            );
+            re_log::trace!(
+                "Previous encoding details: {:?}\n\nNew encoding details: {:?}",
+                old_encoding_details,
+                new_encoding_details
+            );
+        }
+        *encoding_details = Some(new_encoding_details);
+    }
 }
 
 impl Cache for VideoStreamCache {
@@ -606,6 +662,7 @@ impl Cache for VideoStreamCache {
 
                         if let Err(err) = read_samples_from_chunk(
                             *timeline,
+                            entry.timeline_typ,
                             chunk,
                             video_data,
                             video_sample_buffers,

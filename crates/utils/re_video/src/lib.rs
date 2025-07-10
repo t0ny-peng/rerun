@@ -8,10 +8,10 @@ mod time;
 
 pub use self::{
     decode::{
-        AsyncDecoder, Chunk, DecodeError, DecodeHardwareAcceleration, DecodeSettings,
-        DetectGopStartError, Frame, FrameContent, FrameInfo, GopStartDetection, PixelFormat,
-        Result as DecodeResult, YuvMatrixCoefficients, YuvPixelLayout, YuvRange, detect_gop_start,
-        new_decoder,
+        AsyncDecoder, Chunk, DecodeError, DecodeHardwareAcceleration, DecodeSettings, Frame,
+        FrameContent, FrameInfo, GopStartDetection, PixelFormat, Result as DecodeResult,
+        VideoChunkInspection, VideoChunkInspectionError, YuvMatrixCoefficients, YuvPixelLayout,
+        YuvRange, inspect_video_chunk, new_decoder,
     },
     demux::{
         ChromaSubsamplingModes, GopIndex, GroupOfPictures, SampleIndex, SampleMetadata,

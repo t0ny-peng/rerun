@@ -258,11 +258,15 @@ fn try_size_from_video_stream_sample(
         components::VideoCodec::H264 => re_video::VideoCodec::H264,
     };
 
-    match re_video::detect_gop_start(sample, codec).ok()? {
-        re_video::GopStartDetection::StartOfGop(descr) => Some([
+    match re_video::inspect_video_chunk(sample, codec).ok()? {
+        re_video::VideoChunkInspection {
+            gop_detection: re_video::GopStartDetection::StartOfGop(descr),
+            ..
+        } => Some([
             descr.coded_dimensions[0] as _,
             descr.coded_dimensions[1] as _,
         ]),
-        re_video::GopStartDetection::NotStartOfGop => None,
+
+        _ => None,
     }
 }

@@ -8,16 +8,6 @@ pub struct Custom {
 }
 
 impl rerun::Archetype for Custom {
-    type Indicator = rerun::GenericIndicatorComponent<Self>;
-
-    fn indicator() -> rerun::SerializedComponentBatch {
-        use rerun::ComponentBatch as _;
-        #[allow(clippy::unwrap_used)]
-        Self::Indicator::default()
-            .serialized(Self::descriptor_indicator())
-            .unwrap()
-    }
-
     fn name() -> rerun::ArchetypeName {
         "Custom".into()
     }
@@ -56,16 +46,6 @@ impl Custom {
         }
     }
 
-    /// Returns the [`rerun::ComponentDescriptor`] for the associated indicator component.
-    #[inline]
-    pub fn descriptor_indicator() -> rerun::ComponentDescriptor {
-        rerun::ComponentDescriptor {
-            archetype: None,
-            component: "CustomIndicator".into(),
-            component_type: None,
-        }
-    }
-
     #[inline]
     pub fn new(
         positions: impl IntoIterator<Item = impl Into<rerun::components::Position3D>>,
@@ -95,14 +75,9 @@ impl Custom {
 impl rerun::AsComponents for Custom {
     #[inline]
     fn as_serialized_batches(&self) -> Vec<rerun::SerializedComponentBatch> {
-        use rerun::Archetype as _;
-        [
-            Some(Self::indicator()),
-            self.positions.clone(),
-            self.colors.clone(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+        [self.positions.clone(), self.colors.clone()]
+            .into_iter()
+            .flatten()
+            .collect()
     }
 }

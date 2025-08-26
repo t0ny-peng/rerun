@@ -1,8 +1,8 @@
 [package]
 name = "custom_visualizer"
 version = "0.24.0-alpha.3+dev"
-edition = "2021"
-rust-version = "1.85"
+edition = "2024"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 publish = false
 

@@ -69,6 +69,7 @@ impl CustomDrawData {
     }
 
     /// Adds an instance to this draw data.
+    #[allow(clippy::too_many_arguments)] // TODO:?
     pub fn add(
         &mut self,
         ctx: &re_renderer::RenderContext,

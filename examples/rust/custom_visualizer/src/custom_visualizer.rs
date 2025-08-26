@@ -83,8 +83,8 @@ impl VisualizerSystem for CustomVisualizer {
                     colors.map_or(&[], |colors| bytemuck::cast_slice(colors));
                 let colors = clamped_or(colors, &fallback_color);
 
-                for (instance_index, (position, color)) in
-                    positions.into_iter().zip(colors.into_iter()).enumerate()
+                for (instance_index, (_position, color)) in
+                    positions.iter().zip(colors.into_iter()).enumerate()
                 {
                     let instance = instance_index as u64;
                     let picking_layer_instance_id = re_renderer::PickingLayerInstanceId(instance);

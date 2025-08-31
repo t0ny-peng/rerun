@@ -72,7 +72,7 @@ fn fs_main_shaded(in: VertexOut) -> @location(0) vec4f {
 
     if all(in.normal_world_space == vec3f(0.0, 0.0, 0.0)) {
         // no normal, no shading
-        return vec4f(albedo, 1.0);
+        return vec4f(albedo, 1.0) * material.albedo_factor.a;
     } else {
         let normal = normalize(in.normal_world_space);
 
@@ -86,7 +86,7 @@ fn fs_main_shaded(in: VertexOut) -> @location(0) vec4f {
 
         let radiance = albedo * shading;
 
-        return vec4f(radiance, 1.0);
+        return vec4f(radiance, 1.0) * material.albedo_factor.a;
     }
 }
 

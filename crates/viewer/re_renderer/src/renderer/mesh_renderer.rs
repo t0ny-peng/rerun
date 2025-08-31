@@ -5,6 +5,7 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
+use enumset::EnumSet;
 use smallvec::smallvec;
 
 use crate::{
@@ -87,6 +88,9 @@ mod gpu_data {
     }
 }
 
+/// A batch of mesh instances that are drawn together.
+///
+/// Note that we don't split the mesh by material.
 #[derive(Clone)]
 struct MeshBatch {
     mesh: Arc<GpuMesh>,
@@ -100,6 +104,8 @@ struct MeshBatch {
     /// smaller or equal to `instance_end_index`.
     /// If it is equal to `instance_end_index`, there are no meshes with outlines in this batch.
     instance_end_index_with_outlines: u32,
+
+    draw_phases: EnumSet<DrawPhase>,
 }
 
 #[derive(Clone)]
@@ -122,14 +128,8 @@ impl DrawData for MeshDrawData {
         // TODO(andreas): transparency, distance sorting etc.
 
         for (batch_idx, batch) in self.batches.iter().enumerate() {
-            let phases = if batch.instance_end_index_with_outlines == batch.instance_start_index {
-                DrawPhase::Opaque | DrawPhase::PickingLayer
-            } else {
-                DrawPhase::OutlineMask | DrawPhase::Opaque | DrawPhase::PickingLayer
-            };
-
             collector.add_drawable(
-                phases,
+                batch.draw_phases,
                 DrawDataDrawable {
                     distance_sort_key: f32::MAX,
                     draw_data_payload: batch_idx as _,
@@ -242,12 +242,21 @@ impl MeshDrawData {
                         .cmp(&b.outline_mask_ids.is_none())
                 });
 
-                let mut mesh = None;
-                for instance in instances {
-                    if mesh.is_none() {
-                        mesh = Some(instance.gpu_mesh.clone());
-                    }
+                let Some(first_instance) = instances.first() else {
+                    continue;
+                };
+                let mesh = first_instance.gpu_mesh.clone();
 
+                let any_material_has_transparency = mesh
+                    .materials
+                    .iter()
+                    .any(|material| material.has_transparency);
+                let all_materials_have_transparency = mesh
+                    .materials
+                    .iter()
+                    .all(|material| material.has_transparency);
+
+                for instance in instances {
                     count += 1;
                     count_with_outlines += instance.outline_mask_ids.is_some() as u32;
 
@@ -286,15 +295,28 @@ impl MeshDrawData {
                     })?;
                 }
 
-                if let Some(mesh) = mesh {
-                    batches.push(MeshBatch {
-                        mesh,
-                        instance_start_index: num_processed_instances,
-                        instance_end_index: (num_processed_instances + count),
-                        instance_end_index_with_outlines: (num_processed_instances
-                            + count_with_outlines),
-                    });
+                let mut draw_phases = EnumSet::from(DrawPhase::PickingLayer);
+                if count_with_outlines > 0 {
+                    draw_phases |= DrawPhase::OutlineMask;
                 }
+                if any_material_has_transparency {
+                    draw_phases |= DrawPhase::Transparent;
+                }
+                if !all_materials_have_transparency {
+                    draw_phases |= DrawPhase::Opaque;
+                }
+
+                // TODO: don't batch meshes with transparency as aggressively.
+                // I think it's fine to "acidentially" aggresssively de-batch mixed meshes.
+
+                batches.push(MeshBatch {
+                    mesh,
+                    instance_start_index: num_processed_instances,
+                    instance_end_index: (num_processed_instances + count),
+                    instance_end_index_with_outlines: (num_processed_instances
+                        + count_with_outlines),
+                    draw_phases,
+                });
 
                 num_processed_instances += count;
             }
@@ -314,9 +336,13 @@ impl MeshDrawData {
 }
 
 pub struct MeshRenderer {
-    render_pipeline_shaded: GpuRenderPipelineHandle,
-    render_pipeline_picking_layer: GpuRenderPipelineHandle,
-    render_pipeline_outline_mask: GpuRenderPipelineHandle,
+    rp_shaded: GpuRenderPipelineHandle,
+
+    rp_shaded_alpha_blended_cull_back: GpuRenderPipelineHandle,
+    rp_shaded_alpha_blended_cull_front: GpuRenderPipelineHandle,
+
+    rp_picking_layer: GpuRenderPipelineHandle,
+    rp_outline_mask: GpuRenderPipelineHandle,
     pub bind_group_layout: GpuBindGroupLayoutHandle,
 }
 
@@ -371,9 +397,14 @@ impl Renderer for MeshRenderer {
             &include_shader_module!("../../shader/instanced_mesh.wgsl"),
         );
 
+        // TODO(andreas): Make this configurable.
+        // Use GLTF convention right now.
+        let front_face = wgpu::FrontFace::Ccw;
+
         let primitive = wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             cull_mode: None, //Some(wgpu::Face::Back), // TODO(andreas): Need to specify from outside if mesh is CW or CCW?
+            front_face,
             ..Default::default()
         };
         // Put instance vertex buffer on slot 0 since it doesn't change for several draws.
@@ -382,8 +413,8 @@ impl Renderer for MeshRenderer {
                 .chain(mesh_vertices::vertex_buffer_layouts())
                 .collect();
 
-        let render_pipeline_shaded_desc = RenderPipelineDesc {
-            label: "MeshRenderer::render_pipeline_shaded".into(),
+        let rp_shaded_desc = RenderPipelineDesc {
+            label: "MeshRenderer::rp_shaded".into(),
             pipeline_layout,
             vertex_entrypoint: "vs_main".into(),
             vertex_handle: shader_module,
@@ -392,38 +423,68 @@ impl Renderer for MeshRenderer {
             vertex_buffers,
             render_targets: smallvec![Some(ViewBuilder::MAIN_TARGET_COLOR_FORMAT.into())],
             primitive,
-            depth_stencil: ViewBuilder::MAIN_TARGET_DEFAULT_DEPTH_STATE,
+            depth_stencil: Some(ViewBuilder::MAIN_TARGET_DEFAULT_DEPTH_STATE),
             multisample: ViewBuilder::main_target_default_msaa_state(ctx.render_config(), false),
         };
-        let render_pipeline_shaded =
-            render_pipelines.get_or_create(ctx, &render_pipeline_shaded_desc);
-        let render_pipeline_picking_layer = render_pipelines.get_or_create(
+        let rp_shaded = render_pipelines.get_or_create(ctx, &rp_shaded_desc);
+
+        let rp_shaded_alpha_blended_cull_back_desc = RenderPipelineDesc {
+            label: "MeshRenderer::rp_shaded_alpha_blended_front".into(),
+            render_targets: smallvec![Some(wgpu::ColorTargetState {
+                format: ViewBuilder::MAIN_TARGET_COLOR_FORMAT,
+                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            depth_stencil: Some(ViewBuilder::MAIN_TARGET_DEFAULT_DEPTH_STATE_NO_WRITE),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                front_face,
+                ..primitive
+            },
+            ..rp_shaded_desc.clone()
+        };
+        let rp_shaded_alpha_blended_cull_front_desc = RenderPipelineDesc {
+            label: "MeshRenderer::rp_shaded_alpha_blended_back".into(),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Front),
+                ..primitive
+            },
+            ..rp_shaded_alpha_blended_cull_back_desc.clone()
+        };
+        let rp_shaded_alpha_blended_cull_back =
+            render_pipelines.get_or_create(ctx, &rp_shaded_alpha_blended_cull_back_desc);
+        let rp_shaded_alpha_blended_cull_front =
+            render_pipelines.get_or_create(ctx, &rp_shaded_alpha_blended_cull_front_desc);
+
+        let rp_picking_layer = render_pipelines.get_or_create(
             ctx,
             &RenderPipelineDesc {
-                label: "MeshRenderer::render_pipeline_picking_layer".into(),
+                label: "MeshRenderer::rp_picking_layer".into(),
                 fragment_entrypoint: "fs_main_picking_layer".into(),
                 render_targets: smallvec![Some(PickingLayerProcessor::PICKING_LAYER_FORMAT.into())],
                 depth_stencil: PickingLayerProcessor::PICKING_LAYER_DEPTH_STATE,
                 multisample: PickingLayerProcessor::PICKING_LAYER_MSAA_STATE,
-                ..render_pipeline_shaded_desc.clone()
+                ..rp_shaded_desc.clone()
             },
         );
-        let render_pipeline_outline_mask = render_pipelines.get_or_create(
+        let rp_outline_mask = render_pipelines.get_or_create(
             ctx,
             &RenderPipelineDesc {
-                label: "MeshRenderer::render_pipeline_outline_mask".into(),
+                label: "MeshRenderer::rp_outline_mask".into(),
                 fragment_entrypoint: "fs_main_outline_mask".into(),
                 render_targets: smallvec![Some(OutlineMaskProcessor::MASK_FORMAT.into())],
                 depth_stencil: OutlineMaskProcessor::MASK_DEPTH_STATE,
                 multisample: OutlineMaskProcessor::mask_default_msaa_state(ctx.device_caps().tier),
-                ..render_pipeline_shaded_desc
+                ..rp_shaded_desc
             },
         );
 
         Self {
-            render_pipeline_shaded,
-            render_pipeline_picking_layer,
-            render_pipeline_outline_mask,
+            rp_shaded,
+            rp_shaded_alpha_blended_cull_back,
+            rp_shaded_alpha_blended_cull_front,
+            rp_picking_layer,
+            rp_outline_mask,
             bind_group_layout,
         }
     }
@@ -438,14 +499,15 @@ impl Renderer for MeshRenderer {
         re_tracing::profile_function!();
 
         let pipeline_handle = match phase {
-            DrawPhase::OutlineMask => self.render_pipeline_outline_mask,
-            DrawPhase::Opaque => self.render_pipeline_shaded,
-            DrawPhase::PickingLayer => self.render_pipeline_picking_layer,
+            DrawPhase::OutlineMask => Some(self.rp_outline_mask),
+            DrawPhase::Opaque => Some(self.rp_shaded),
+            DrawPhase::PickingLayer => Some(self.rp_picking_layer),
+            DrawPhase::Transparent => None, // Handled later since we have to switch back and forth between front & back face culling.
             _ => unreachable!("We were called on a phase we weren't subscribed to: {phase:?}"),
         };
-        let pipeline = render_pipelines.get(pipeline_handle)?;
-
-        pass.set_pipeline(pipeline);
+        if let Some(pipeline_handle) = pipeline_handle {
+            pass.set_pipeline(render_pipelines.get(pipeline_handle)?);
+        }
 
         // TODO(andreas): use drawables to orchestrate drawing.
         for DrawInstruction {
@@ -497,8 +559,30 @@ impl Renderer for MeshRenderer {
                 debug_assert!(!instance_range.is_empty());
 
                 for material in &mesh_batch.mesh.materials {
+                    if phase == DrawPhase::Transparent && !material.has_transparency {
+                        continue;
+                    }
+                    if phase == DrawPhase::Opaque && material.has_transparency {
+                        continue;
+                    }
+
                     pass.set_bind_group(1, &material.bind_group, &[]);
-                    pass.draw_indexed(material.index_range.clone(), 0, instance_range.clone());
+
+                    if phase == DrawPhase::Transparent {
+                        // First draw without front faces.
+                        pass.set_pipeline(
+                            render_pipelines.get(self.rp_shaded_alpha_blended_cull_front)?,
+                        );
+                        pass.draw_indexed(material.index_range.clone(), 0, instance_range.clone());
+
+                        // And then without back faces.
+                        pass.set_pipeline(
+                            render_pipelines.get(self.rp_shaded_alpha_blended_cull_back)?,
+                        );
+                        pass.draw_indexed(material.index_range.clone(), 0, instance_range.clone());
+                    } else {
+                        pass.draw_indexed(material.index_range.clone(), 0, instance_range.clone());
+                    }
                 }
             }
         }

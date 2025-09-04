@@ -246,10 +246,3 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/rerun_sdkConfigVersion.cmake"
     DESTINATION ${RERUN_SDK_INSTALL_CMAKE_DIR}
 )
-
-# -----------------------------------------------------------------------------
-# Add tests if they exist (they are not part of the distribution zip).
-# Has direct dependency to arrow, so needs to happen last.
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tests)
-endif()

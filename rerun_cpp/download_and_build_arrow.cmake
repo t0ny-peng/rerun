@@ -84,8 +84,8 @@ function(download_and_build_arrow)
     ExternalProject_Add(
         arrow_cpp
         PREFIX ${ARROW_DOWNLOAD_PATH}
-        GIT_REPOSITORY https://github.com/apache/arrow.git
-        GIT_TAG apache-arrow-18.0.0
+        GIT_REPOSITORY https://github.com/t0ny-peng/arrow.git
+        GIT_TAG apache-arrow-18.0.0-hao-fix
         GIT_SHALLOW ON
         GIT_PROGRESS OFF # Git progress sounds like a nice idea but is in practice very spammy.
 
